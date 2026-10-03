@@ -186,8 +186,8 @@ io.on('connection', (socket) => {
   });
 });
 
-// Fallback to React index.html for any GET request
-app.get('*', (req, res) => {
+// Fallback to React index.html for any GET request (Express 5 safe regex)
+app.get(/^.*$/, (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'), (err) => {
     if (err) {
       res.status(200).send('Web Transfer Relay Server is Running. Frontend not yet built into client/dist.');
