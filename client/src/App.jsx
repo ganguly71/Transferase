@@ -179,6 +179,16 @@ function App() {
     });
   };
 
+  const handleCreateRoom = () => {
+    if (!socket) return;
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    socket.emit('join-room', { roomCode: code }, (res) => {
+      if (res.success) {
+        showToast(`Created secure room: ${code}`, 'success');
+      }
+    });
+  };
+
   const handleJoinCustomRoom = (e) => {
     e.preventDefault();
     if (!socket) return;
@@ -367,28 +377,36 @@ function App() {
           </span>
         </div>
 
-        <form onSubmit={handleJoinCustomRoom} className="room-form">
-          <input
-            type="text"
-            placeholder="Enter Room Code (e.g. 7788)"
-            value={roomCodeInput}
-            onChange={(e) => setRoomCodeInput(e.target.value)}
-            className="room-input"
-          />
-          <button type="submit" className="room-btn">
-            Join Room <ArrowRight size={14} />
-          </button>
-          {networkInfo.isCustom && (
-            <button 
-              type="button" 
-              onClick={handleResetToLocalNetwork} 
-              className="room-btn secondary"
-              title="Return to auto-detected local network"
-            >
-              Reset to Wi-Fi
+        <div className="room-controls-wrapper">
+          {!networkInfo.isCustom && (
+            <button type="button" onClick={handleCreateRoom} className="room-btn create-btn">
+              <Key size={14} /> Create Room
             </button>
           )}
-        </form>
+          <form onSubmit={handleJoinCustomRoom} className="room-form">
+            <input
+              type="text"
+              placeholder="6-digit code"
+              value={roomCodeInput}
+              onChange={(e) => setRoomCodeInput(e.target.value)}
+              className="room-input"
+              maxLength={6}
+            />
+            <button type="submit" className="room-btn join-btn">
+              Join <ArrowRight size={14} />
+            </button>
+            {networkInfo.isCustom && (
+              <button 
+                type="button" 
+                onClick={handleResetToLocalNetwork} 
+                className="room-btn secondary"
+                title="Return to auto-detected local network"
+              >
+                Reset to Wi-Fi
+              </button>
+            )}
+          </form>
+        </div>
       </div>
 
       {/* Active Transfer Progress */}

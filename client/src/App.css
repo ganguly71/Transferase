@@ -107,11 +107,25 @@
   color: var(--text-secondary);
 }
 
+.room-controls-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
 .room-form {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.create-btn {
+  background: var(--success-color);
+}
+.create-btn:hover {
+  background: #059669;
 }
 
 .room-input {
