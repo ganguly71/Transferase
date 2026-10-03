@@ -179,7 +179,7 @@ io.on('connection', (socket) => {
     peerData.isCustomRoom = true;
     isHost = (room.hostUserId === persistentUserId);
     const hostUser = room.participants.find(p => p.userId === room.hostUserId);
-    currentHostName = hostUser ? hostUser.name : initialName;
+    currentHostName = hostUser ? hostUser.name : (isHost ? initialName : 'Host');
   }
 
   socket.join(targetRoom);
@@ -207,10 +207,11 @@ io.on('connection', (socket) => {
 
   if (isCustom) {
     const room = rooms.get(requestedRoomCode);
+    const actualHost = room ? room.participants.find(p => p.userId === room.hostUserId) : null;
     io.to(targetRoom).emit('room-info', {
       code: requestedRoomCode,
       hostUserId: room ? room.hostUserId : persistentUserId,
-      hostName: currentHostName,
+      hostName: actualHost ? actualHost.name : currentHostName,
       participantsCount: room ? room.participants.length : 1
     });
   }
@@ -281,7 +282,7 @@ io.on('connection', (socket) => {
 
     const isHostNow = (room.hostUserId === peerData.userId);
     const hostUser = room.participants.find(p => p.userId === room.hostUserId);
-    const hostName = hostUser ? hostUser.name : peerData.name;
+    const hostName = hostUser ? hostUser.name : (isHostNow ? peerData.name : 'Host');
 
     const newRoomPeers = Array.from(peers.values())
       .filter(p => p.currentRoom === newRoomName && p.id !== socket.id);
