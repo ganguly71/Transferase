@@ -221,7 +221,8 @@ function App() {
         setTransferProgress({
           fileName: file.name,
           percent: 5,
-          status: `Receiving from ${senderName || 'Peer'}...`
+          status: `Receiving from ${senderName || 'Peer'}...`,
+          isDownload: true
         });
       } else if (file.type === 'chunk') {
         const fileTransfer = incomingFiles.current[file.fileId];
@@ -235,7 +236,8 @@ function App() {
           setTransferProgress({
             fileName: fileTransfer.name,
             percent: pct,
-            status: `Receiving (${pct}%)...`
+            status: `Receiving (${pct}%)...`,
+            isDownload: true
           });
           
           if (fileTransfer.receivedCount === fileTransfer.totalChunks) {
@@ -587,6 +589,12 @@ function App() {
 
     setIsZipping(true);
     showToast(`Archiving ${receivedFiles.length} items into ZIP...`, 'info');
+    setTransferProgress({
+      fileName: `Transferase_Archive.zip (${receivedFiles.length} files)`,
+      percent: 10,
+      status: `Packaging and compressing files for download...`,
+      isDownload: true
+    });
 
     try {
       const zip = new JSZip();
@@ -617,18 +625,27 @@ function App() {
         }
       }
 
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+      const zipFileName = `Transferase_Files_${dateStr}.zip`;
+
       const zipBlob = await zip.generateAsync({ 
         type: 'blob',
         compression: 'DEFLATE',
         compressionOptions: { level: 6 }
+      }, (metadata) => {
+        setTransferProgress({
+          fileName: zipFileName,
+          percent: Math.max(10, Math.round(metadata.percent)),
+          status: `Compressing and building ZIP archive (${Math.round(metadata.percent)}%)...`,
+          isDownload: true
+        });
       });
 
       const zipUrl = URL.createObjectURL(zipBlob);
       const downloadLink = document.createElement('a');
-      const now = new Date();
-      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
       downloadLink.href = zipUrl;
-      downloadLink.download = `Transferase_Files_${dateStr}.zip`;
+      downloadLink.download = zipFileName;
       document.body.appendChild(downloadLink);
       downloadLink.click();
       document.body.removeChild(downloadLink);
@@ -652,6 +669,7 @@ function App() {
       });
     } finally {
       setIsZipping(false);
+      setTransferProgress(null);
     }
   };
 
@@ -698,7 +716,8 @@ function App() {
       setTransferProgress({
         fileName: `(${i + 1}/${itemsToSend.length}) ${item.name}`,
         percent: 0,
-        status: `Preparing to send to ${targetPeerIds.length} device(s)...`
+        status: `Preparing to send to ${targetPeerIds.length} device(s)...`,
+        isDownload: false
       });
 
       // Emit metadata first
@@ -745,7 +764,8 @@ function App() {
                 setTransferProgress({
                   fileName: `(${i + 1}/${itemsToSend.length}) ${item.name}`,
                   percent: pct,
-                  status: `Sending (${pct}%) to ${targetPeerIds.length} peer(s)...`
+                  status: `Sending (${pct}%) to ${targetPeerIds.length} peer(s)...`,
+                  isDownload: false
                 });
                 setTimeout(sendNextChunk, 15);
               };
@@ -1017,10 +1037,18 @@ function App() {
 
       {/* Active Transfer Progress (if any) */}
       {transferProgress && (
-        <div className="progress-banner glass-panel">
+        <div className={`progress-banner ${transferProgress.isDownload ? 'is-download' : 'is-upload'}`}>
           <div className="progress-header">
             <span className="file-transferring-name">
-              <Upload size={16} className="spin-slow" /> {transferProgress.fileName}
+              {transferProgress.isDownload ? (
+                <Download size={18} className="spin-slow transfer-icon" />
+              ) : (
+                <Upload size={18} className="spin-slow transfer-icon" />
+              )}
+              <span className="transfer-type-tag">
+                {transferProgress.isDownload ? 'DOWNLOADING' : 'SENDING'}
+              </span>
+              <span className="file-name-text">{transferProgress.fileName}</span>
             </span>
             <span className="transfer-percentage">{transferProgress.percent}%</span>
           </div>
