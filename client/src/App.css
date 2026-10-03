@@ -387,26 +387,36 @@
 .room-role-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 0.2rem 0.55rem;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 0.22rem 0.65rem;
   text-transform: uppercase;
-  border-radius: 0;
+  border-radius: 2px;
+  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.3);
+  transition: all 0.2s ease;
+  vertical-align: middle;
 }
 
 .room-role-badge.host-badge {
-  background: rgba(245, 158, 11, 0.2);
-  color: #D97706;
-  border: 1px solid rgba(245, 158, 11, 0.6);
+  background: #150B05 !important;
+  color: #FFD54F !important;
+  border: 2px solid #F59E0B !important;
+  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.4);
+}
+
+.room-role-badge.host-badge svg {
+  color: #F59E0B;
+  filter: drop-shadow(0 0 2px rgba(245, 158, 11, 0.7));
 }
 
 .room-role-badge.guest-badge {
-  background: rgba(58, 38, 24, 0.08);
-  color: var(--text-secondary);
-  border: 1px solid var(--card-border);
-  font-weight: 600;
+  background: #150B05 !important;
+  color: #F3E8DF !important;
+  border: 1.5px solid #8C6239 !important;
+  font-weight: 700;
+  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.3);
 }
 
 /* Toast Notifications */

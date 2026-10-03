@@ -996,7 +996,7 @@ function App() {
               {networkInfo.isCustom && (
                 isHost ? (
                   <span className="room-role-badge host-badge" title="You created this room and have room-closing privileges">
-                    <Crown size={12} /> Host (You)
+                    <Crown size={13} strokeWidth={2.5} /> Host (You)
                   </span>
                 ) : (
                   roomHostName && (
@@ -1608,12 +1608,12 @@ function App() {
                 <h3>Connected Peers</h3>
                 <p className="subtitle">
                   {networkInfo.isCustom 
-                    ? 'Devices joined with this room code' 
-                    : 'Other devices on your Wi-Fi pop up here automatically'}
+                    ? '  ' 
+                    : ' '}
                 </p>
               </div>
               <div className="peer-counter">
-                {peers.length} {peers.length === 1 ? 'device' : 'devices'} ready
+                <strong>{peers.length} {peers.length === 1 ? 'device' : 'devices'} ready</strong>
               </div>
             </div>
 
