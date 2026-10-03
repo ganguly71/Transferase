@@ -1,0 +1,12 @@
+{
+  "name": "transferase-online",
+  "version": "1.0.0",
+  "description": "Peer-to-peer file transfer web relay",
+  "scripts": {
+    "postinstall": "cd client && npm install && npm run build && cd ../server && npm install",
+    "start": "cd server && node index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
