@@ -4,16 +4,30 @@ import {
   Share2, 
   Monitor, 
   Smartphone, 
+  Tablet,
   File, 
   Download, 
   Upload, 
   Wifi, 
   Key, 
   CheckCircle, 
-  AlertCircle,
-  Copy,
+  AlertCircle, 
+  ArrowRight,
+  Trash2,
+  X,
+  Plus,
+  Search,
+  MessageSquare,
+  Send,
+  CheckSquare,
+  Square,
+  FileText,
+  AlertTriangle,
+  Clipboard,
+  Check,
   Layers,
-  ArrowRight
+  HardDrive,
+  Pencil
 } from 'lucide-react';
 import './App.css';
 
@@ -32,6 +46,61 @@ const getDeviceType = () => {
   return 'desktop';
 };
 
+const formatBytes = (bytes) => {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+
+const getDeviceDataLimit = (deviceType) => {
+  const dt = (deviceType || '').toLowerCase();
+  if (dt === 'mobile') return 'Max Safe: ~1 GB (RAM limit)';
+  if (dt === 'tablet') return 'Max Safe: ~1.5 GB (RAM limit)';
+  return 'Max Safe: ~2-4 GB (Desktop RAM)';
+};
+
+const MAX_SAFE_QUEUE_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB safe threshold
+
+const splitFileName = (filename) => {
+  if (!filename) return { baseName: '', extension: '' };
+  const lastDotIndex = filename.lastIndexOf('.');
+  if (lastDotIndex > 0 && lastDotIndex < filename.length - 1) {
+    return {
+      baseName: filename.substring(0, lastDotIndex),
+      extension: filename.substring(lastDotIndex)
+    };
+  }
+  return {
+    baseName: filename,
+    extension: ''
+  };
+};
+
+// Auto-number duplicates: e.g. "photo.jpg" -> "photo (2).jpg", "(3)", etc.
+const resolveDuplicateName = (desiredName, existingNames = []) => {
+  if (!existingNames.includes(desiredName)) {
+    return desiredName;
+  }
+
+  const { baseName, extension } = splitFileName(desiredName);
+  const match = baseName.match(/^(.*?)(?:\s*\((\d+)\))$/);
+  const cleanBase = match ? match[1].trim() : baseName;
+
+  let copyNo = 2;
+  if (match && match[2]) {
+    copyNo = parseInt(match[2], 10) + 1;
+  }
+
+  let candidate = `${cleanBase} (${copyNo})${extension}`;
+  while (existingNames.includes(candidate)) {
+    copyNo++;
+    candidate = `${cleanBase} (${copyNo})${extension}`;
+  }
+  return candidate;
+};
+
 function App() {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -46,18 +115,37 @@ function App() {
   const [transferProgress, setTransferProgress] = useState(null); // { fileName, percent, status }
   const [notification, setNotification] = useState(null);
 
+  // Queue State
+  const [queue, setQueue] = useState([]); // array of { id, file, name, size, type, isText, textContent, caption }
+  const [textInput, setTextInput] = useState('');
+  const [isSendingQueue, setIsSendingQueue] = useState(false);
+  const [isQueueDragging, setIsQueueDragging] = useState(false);
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [editingItemBaseName, setEditingItemBaseName] = useState('');
+  const [editingItemExt, setEditingItemExt] = useState('');
+  const [editingTextId, setEditingTextId] = useState(null);
+  const [editingTextContent, setEditingTextContent] = useState('');
+
+  // Recipient Modal State
+  const [showRecipientModal, setShowRecipientModal] = useState(false);
+  const [recipientSearch, setRecipientSearch] = useState('');
+  const [selectedPeerIds, setSelectedPeerIds] = useState([]);
+  const [copiedId, setCopiedId] = useState(null);
+
   const incomingFiles = useRef({});
+  const textareaRef = useRef(null);
+  const queueFileInputRef = useRef(null);
 
   const showToast = (message, type = 'info') => {
     setNotification({ message, type });
     setTimeout(() => {
       setNotification(null);
-    }, 4000);
+    }, 4500);
   };
 
   useEffect(() => {
     const newSocket = io(SERVER_URL, { 
-      maxHttpBufferSize: 1e8, // allow up to 100MB
+      maxHttpBufferSize: 1e8, // allow up to 100MB socket packets
       query: { deviceType: getDeviceType() }
     });
     setSocket(newSocket);
@@ -117,11 +205,14 @@ function App() {
       if (file.type === 'meta') {
         incomingFiles.current[file.fileId] = {
           name: file.name,
+          caption: file.caption || '',
+          isText: file.isText || false,
           fileType: file.fileType,
           size: file.size,
           totalChunks: file.totalChunks,
           senderName: senderName || 'Unknown',
-          chunks: []
+          chunks: [],
+          receivedCount: 0
         };
         setTransferProgress({
           fileName: file.name,
@@ -131,9 +222,11 @@ function App() {
       } else if (file.type === 'chunk') {
         const fileTransfer = incomingFiles.current[file.fileId];
         if (fileTransfer) {
+          if (!fileTransfer.chunks[file.chunkIndex]) {
+            fileTransfer.receivedCount++;
+          }
           fileTransfer.chunks[file.chunkIndex] = file.data;
-          const receivedCount = fileTransfer.chunks.filter(Boolean).length;
-          const pct = Math.round((receivedCount / fileTransfer.totalChunks) * 100);
+          const pct = Math.round((fileTransfer.receivedCount / fileTransfer.totalChunks) * 100);
 
           setTransferProgress({
             fileName: fileTransfer.name,
@@ -141,14 +234,31 @@ function App() {
             status: `Receiving (${pct}%)...`
           });
           
-          if (receivedCount === fileTransfer.totalChunks) {
-            const fullData = fileTransfer.chunks.join('');
+          if (fileTransfer.receivedCount === fileTransfer.totalChunks) {
+            const blob = new Blob(fileTransfer.chunks, { type: fileTransfer.fileType });
+            const blobUrl = URL.createObjectURL(blob);
+
+            // Decode text preview if applicable
+            let textPreview = '';
+            if (fileTransfer.isText || (fileTransfer.fileType && fileTransfer.fileType.startsWith('text/'))) {
+              try {
+                const decoder = new TextDecoder('utf-8');
+                textPreview = fileTransfer.chunks.map(c => decoder.decode(c, { stream: true })).join('');
+              } catch (err) {
+                console.error('Error decoding text preview', err);
+              }
+            }
+
             setReceivedFiles(prev => [{
+              id: file.fileId || Math.random().toString(36).substring(2, 9),
               name: fileTransfer.name,
+              caption: fileTransfer.caption,
+              isText: fileTransfer.isText,
+              textPreview,
               type: fileTransfer.fileType,
               size: fileTransfer.size,
               senderName: fileTransfer.senderName,
-              data: fullData,
+              data: blobUrl,
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             }, ...prev]);
 
@@ -162,6 +272,402 @@ function App() {
 
     return () => newSocket.disconnect();
   }, []);
+
+  // Global paste handler to add files or text directly to queue
+  useEffect(() => {
+    const handlePaste = (e) => {
+      // Ignore if typing inside standard text input or textarea
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      if (e.clipboardData) {
+        const items = e.clipboardData.items;
+        const pastedFiles = [];
+        let pastedText = null;
+
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].kind === 'file') {
+            const file = items[i].getAsFile();
+            if (file) pastedFiles.push(file);
+          } else if (items[i].kind === 'string' && items[i].type === 'text/plain') {
+            items[i].getAsString((str) => {
+              if (str.trim()) {
+                pastedText = str;
+              }
+            });
+          }
+        }
+
+        if (pastedFiles.length > 0) {
+          addFilesToQueue(pastedFiles);
+        } else if (pastedText) {
+          addTextSnippetToQueue(pastedText);
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
+
+  // Total Queue Size calculation
+  const totalQueueSize = queue.reduce((acc, it) => acc + (it.size || 0), 0);
+  const isOverLimit = totalQueueSize > MAX_SAFE_QUEUE_SIZE;
+
+  // Add multiple files to queue with duplicate auto-renaming "(2)", "(3)"
+  const addFilesToQueue = (fileList) => {
+    if (!fileList || fileList.length === 0) return;
+
+    setQueue(prevQueue => {
+      const currentNames = prevQueue.map(item => item.name);
+
+      const newItems = Array.from(fileList).map(file => {
+        const uniqueName = resolveDuplicateName(file.name, currentNames);
+        currentNames.push(uniqueName);
+
+        let finalFile = file;
+        if (uniqueName !== file.name) {
+          try {
+            finalFile = new File([file], uniqueName, { type: file.type });
+          } catch {
+            finalFile = file;
+          }
+        }
+
+        return {
+          id: Math.random().toString(36).substring(2, 9),
+          file: finalFile,
+          name: uniqueName,
+          size: file.size,
+          type: file.type || 'application/octet-stream',
+          isText: file.type === 'text/plain' || uniqueName.endsWith('.txt'),
+          textContent: null,
+          caption: ''
+        };
+      });
+
+      const nextTotal = prevQueue.reduce((acc, it) => acc + (it.size || 0), 0) + 
+                        newItems.reduce((acc, it) => acc + it.size, 0);
+
+      if (nextTotal > MAX_SAFE_QUEUE_SIZE) {
+        showToast(`Warning: Total size (${formatBytes(nextTotal)}) exceeds the 2 GB safe limit. Devices with low RAM may fail.`, 'error');
+      } else {
+        showToast(`Added ${newItems.length} file(s) to queue`, 'info');
+      }
+
+      return [...prevQueue, ...newItems];
+    });
+  };
+
+  // Add text snippet to queue with duplicate auto-renaming
+  const addTextSnippetToQueue = (text) => {
+    if (!text || !text.trim()) return;
+    const trimmed = text.trim();
+    const cleanSnippet = trimmed.slice(0, 16).replace(/[^a-zA-Z0-9_-]/g, '_');
+    const rawFileName = `note_${cleanSnippet || Date.now().toString().slice(-4)}.txt`;
+
+    setQueue(prevQueue => {
+      const currentNames = prevQueue.map(item => item.name);
+      const uniqueFileName = resolveDuplicateName(rawFileName, currentNames);
+
+      const blob = new Blob([trimmed], { type: 'text/plain;charset=utf-8' });
+      let textFile;
+      try {
+        textFile = new File([blob], uniqueFileName, { type: 'text/plain' });
+      } catch {
+        textFile = blob;
+        textFile.name = uniqueFileName;
+      }
+
+      const newItem = {
+        id: Math.random().toString(36).substring(2, 9),
+        file: textFile,
+        name: uniqueFileName,
+        size: blob.size,
+        type: 'text/plain',
+        isText: true,
+        textContent: trimmed,
+        caption: ''
+      };
+
+      showToast(`Added text note to queue (${formatBytes(blob.size)})`, 'success');
+      return [...prevQueue, newItem];
+    });
+  };
+
+  // Handle clicking "Add Text to Queue" button or pressing Ctrl+Enter
+  const handleAddTextInput = async () => {
+    let text = textInput.trim();
+
+    // If textarea is currently empty, attempt to read directly from system clipboard as a smart fallback
+    if (!text) {
+      try {
+        const clipText = await navigator.clipboard.readText();
+        if (clipText && clipText.trim()) {
+          text = clipText.trim();
+          showToast('Captured text from clipboard and added to queue!', 'success');
+        }
+      } catch {
+        // clipboard access not permitted
+      }
+    }
+
+    if (!text) {
+      showToast('Please type or paste some text first', 'info');
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+      return;
+    }
+
+    addTextSnippetToQueue(text);
+    setTextInput('');
+  };
+
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) {
+        setTextInput(prev => prev ? prev + '\n' + text : text);
+        showToast('Pasted text from clipboard into text box', 'info');
+        if (textareaRef.current) textareaRef.current.focus();
+      } else {
+        showToast('Clipboard is empty or has no text', 'info');
+      }
+    } catch {
+      showToast('Clipboard permission blocked. Press Ctrl+V directly inside the box.', 'info');
+      if (textareaRef.current) textareaRef.current.focus();
+    }
+  };
+
+  const updateQueueCaption = (id, caption) => {
+    setQueue(prev => prev.map(item => item.id === id ? { ...item, caption } : item));
+  };
+
+  const handleStartRename = (item) => {
+    if (editingTextId) handleCancelEditText();
+    const { baseName, extension } = splitFileName(item.name);
+    setEditingItemId(item.id);
+    setEditingItemBaseName(baseName);
+    setEditingItemExt(extension);
+  };
+
+  const handleCancelRename = () => {
+    setEditingItemId(null);
+    setEditingItemBaseName('');
+    setEditingItemExt('');
+  };
+
+  const handleSaveRename = (id) => {
+    const trimmedBase = editingItemBaseName.trim();
+    if (!trimmedBase) {
+      showToast('File name cannot be empty', 'error');
+      return;
+    }
+
+    const requestedName = `${trimmedBase}${editingItemExt}`;
+    const otherNames = queue.filter(it => it.id !== id).map(it => it.name);
+    const finalName = resolveDuplicateName(requestedName, otherNames);
+
+    setQueue(prev => prev.map(it => {
+      if (it.id === id) {
+        let updatedFile = it.file;
+        try {
+          if (it.file instanceof Blob) {
+            updatedFile = new File([it.file], finalName, { type: it.type });
+          }
+        } catch {}
+
+        return {
+          ...it,
+          file: updatedFile,
+          name: finalName
+        };
+      }
+      return it;
+    }));
+
+    setEditingItemId(null);
+    setEditingItemBaseName('');
+    setEditingItemExt('');
+    showToast(`Renamed file to "${finalName}"`, 'success');
+  };
+
+  // Text content editing handlers for text snippets in queue
+  const handleStartEditText = (item) => {
+    if (editingItemId) handleCancelRename();
+    if (item.textContent !== null && item.textContent !== undefined) {
+      setEditingTextId(item.id);
+      setEditingTextContent(item.textContent);
+    } else if (item.file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target.result || '';
+        setEditingTextId(item.id);
+        setEditingTextContent(text);
+      };
+      reader.readAsText(item.file);
+    }
+  };
+
+  const handleCancelEditText = () => {
+    setEditingTextId(null);
+    setEditingTextContent('');
+  };
+
+  const handleSaveEditText = (id) => {
+    const updatedText = editingTextContent.trim();
+    if (!updatedText) {
+      showToast('Text content cannot be empty', 'error');
+      return;
+    }
+
+    setQueue(prev => prev.map(item => {
+      if (item.id === id) {
+        const blob = new Blob([updatedText], { type: 'text/plain;charset=utf-8' });
+        let updatedFile;
+        try {
+          updatedFile = new File([blob], item.name, { type: 'text/plain' });
+        } catch {
+          updatedFile = blob;
+          updatedFile.name = item.name;
+        }
+
+        return {
+          ...item,
+          file: updatedFile,
+          size: blob.size,
+          textContent: updatedText
+        };
+      }
+      return item;
+    }));
+
+    setEditingTextId(null);
+    setEditingTextContent('');
+    showToast('Updated text note content', 'success');
+  };
+
+  const removeFromQueue = (id) => {
+    if (editingItemId === id) handleCancelRename();
+    if (editingTextId === id) handleCancelEditText();
+    setQueue(prev => prev.filter(item => item.id !== id));
+  };
+
+  const clearQueue = () => {
+    handleCancelRename();
+    handleCancelEditText();
+    setQueue([]);
+  };
+
+  // Open recipient selection modal or handle send
+  const handleOpenRecipientModal = () => {
+    if (queue.length === 0) {
+      showToast('Queue is empty. Select files or paste text first.', 'error');
+      return;
+    }
+    if (peers.length === 0) {
+      showToast('No devices connected. Wait for nearby peers or share room code.', 'error');
+      return;
+    }
+
+    // Default select all connected peers
+    setSelectedPeerIds(peers.map(p => p.id));
+    setRecipientSearch('');
+    setShowRecipientModal(true);
+  };
+
+  // Direct send from a peer card
+  const handleSendQueueToSpecificPeer = (peerId) => {
+    if (queue.length === 0) {
+      showToast('Queue is empty. Select files or paste text first.', 'error');
+      return;
+    }
+    startSendingQueue([peerId]);
+  };
+
+  // Start sending all queued items to selected peers
+  const startSendingQueue = async (targetPeerIds) => {
+    if (!socket || targetPeerIds.length === 0 || queue.length === 0) return;
+    setShowRecipientModal(false);
+    setIsSendingQueue(true);
+
+    const itemsToSend = [...queue];
+    const CHUNK_SIZE = 500000; // 500KB chunks
+
+    for (let i = 0; i < itemsToSend.length; i++) {
+      const item = itemsToSend[i];
+      const totalChunks = Math.ceil(item.file.size / CHUNK_SIZE) || 1;
+      const fileId = Math.random().toString(36).substring(2, 9);
+
+      setTransferProgress({
+        fileName: `(${i + 1}/${itemsToSend.length}) ${item.name}`,
+        percent: 0,
+        status: `Preparing to send to ${targetPeerIds.length} device(s)...`
+      });
+
+      // Emit metadata first
+      targetPeerIds.forEach(peerId => {
+        socket.emit('file-transfer', {
+          to: peerId,
+          file: {
+            type: 'meta',
+            fileId,
+            name: item.name,
+            caption: item.caption || '',
+            isText: item.isText || false,
+            fileType: item.type,
+            size: item.size,
+            totalChunks
+          }
+        });
+      });
+
+      if (item.file.size > 0) {
+        let offset = 0;
+        let chunkIndex = 0;
+
+        await new Promise((resolve) => {
+          const sendNextChunk = () => {
+            if (offset < item.file.size) {
+              const chunk = item.file.slice(offset, offset + CHUNK_SIZE);
+              const reader = new FileReader();
+              reader.onload = (e) => {
+                targetPeerIds.forEach(peerId => {
+                  socket.emit('file-transfer', {
+                    to: peerId,
+                    file: {
+                      type: 'chunk',
+                      fileId,
+                      chunkIndex,
+                      data: e.target.result // ArrayBuffer
+                    }
+                  });
+                });
+                offset += CHUNK_SIZE;
+                chunkIndex++;
+                const pct = Math.round((chunkIndex / totalChunks) * 100);
+                setTransferProgress({
+                  fileName: `(${i + 1}/${itemsToSend.length}) ${item.name}`,
+                  percent: pct,
+                  status: `Sending (${pct}%) to ${targetPeerIds.length} peer(s)...`
+                });
+                setTimeout(sendNextChunk, 15);
+              };
+              reader.readAsArrayBuffer(chunk);
+            } else {
+              resolve();
+            }
+          };
+          sendNextChunk();
+        });
+      }
+    }
+
+    setTransferProgress(null);
+    setIsSendingQueue(false);
+    setQueue([]);
+    showToast(`Successfully transferred ${itemsToSend.length} item(s)!`, 'success');
+  };
 
   const handleRename = () => {
     if (!editNameValue.trim() || editNameValue === myName) {
@@ -208,126 +714,31 @@ function App() {
     });
   };
 
-  const sendFile = (peerId, file) => {
-    if (!socket) return;
-    
-    const CHUNK_SIZE = 500000; // 500KB chunks
-    const reader = new FileReader();
-    
-    setTransferProgress({
-      fileName: file.name,
-      percent: 0,
-      status: 'Preparing to send...'
-    });
-
-    reader.onload = (e) => {
-      const fileBase64 = e.target.result;
-      const totalChunks = Math.ceil(fileBase64.length / CHUNK_SIZE);
-      const fileId = Math.random().toString(36).substring(2, 9);
-      
-      socket.emit('file-transfer', {
-        to: peerId,
-        file: {
-          type: 'meta',
-          fileId,
-          name: file.name,
-          fileType: file.type,
-          size: file.size,
-          totalChunks
-        }
-      });
-
-      let offset = 0;
-      let chunkIndex = 0;
-      
-      const sendNextChunk = () => {
-        if (offset < fileBase64.length) {
-          const chunk = fileBase64.slice(offset, offset + CHUNK_SIZE);
-          socket.emit('file-transfer', {
-            to: peerId,
-            file: {
-              type: 'chunk',
-              fileId,
-              chunkIndex,
-              data: chunk
-            }
-          });
-          offset += CHUNK_SIZE;
-          chunkIndex++;
-          const pct = Math.round((chunkIndex / totalChunks) * 100);
-          setTransferProgress({
-            fileName: file.name,
-            percent: pct,
-            status: `Sending to peer (${pct}%)...`
-          });
-          setTimeout(sendNextChunk, 15);
-        } else {
-          setTransferProgress(null);
-          showToast(`Successfully sent ${file.name}`, 'success');
-        }
-      };
-      
-      sendNextChunk();
-    };
-    reader.readAsDataURL(file);
+  const handleCopyText = (text, id) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    showToast('Copied text to clipboard!', 'success');
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const broadcastFile = (file) => {
-    if (!socket || peers.length === 0) return;
-    
-    const CHUNK_SIZE = 500000;
-    const reader = new FileReader();
-    
-    setTransferProgress({
-      fileName: file.name,
-      percent: 0,
-      status: 'Broadcasting...'
-    });
+  // Filter peers for recipient modal
+  const filteredPeers = peers.filter(p => 
+    p.name.toLowerCase().includes(recipientSearch.toLowerCase()) ||
+    p.deviceType.toLowerCase().includes(recipientSearch.toLowerCase())
+  );
 
-    reader.onload = (e) => {
-      const fileBase64 = e.target.result;
-      const totalChunks = Math.ceil(fileBase64.length / CHUNK_SIZE);
-      const fileId = Math.random().toString(36).substring(2, 9);
-      
-      socket.emit('broadcast-file', {
-        type: 'meta',
-        fileId,
-        name: file.name,
-        fileType: file.type,
-        size: file.size,
-        totalChunks
-      });
+  const toggleSelectPeer = (id) => {
+    setSelectedPeerIds(prev => 
+      prev.includes(id) ? prev.filter(pId => pId !== id) : [...prev, id]
+    );
+  };
 
-      let offset = 0;
-      let chunkIndex = 0;
-      
-      const sendNextChunk = () => {
-        if (offset < fileBase64.length) {
-          const chunk = fileBase64.slice(offset, offset + CHUNK_SIZE);
-          socket.emit('broadcast-file', {
-            type: 'chunk',
-            fileId,
-            chunkIndex,
-            data: chunk
-          });
-          offset += CHUNK_SIZE;
-          chunkIndex++;
-          const pct = Math.round((chunkIndex / totalChunks) * 100);
-          setTransferProgress({
-            fileName: file.name,
-            percent: pct,
-            status: `Broadcasting (${pct}%)...`
-          });
-          setTimeout(sendNextChunk, 15);
-        } else {
-          setTransferProgress(null);
-          showToast(`Broadcasted ${file.name} to all devices`, 'success');
-        }
-      };
-      
-      sendNextChunk();
-    };
-    reader.readAsDataURL(file);
+  const toggleSelectAllPeers = () => {
+    if (selectedPeerIds.length === filteredPeers.length) {
+      setSelectedPeerIds([]);
+    } else {
+      setSelectedPeerIds(filteredPeers.map(p => p.id));
+    }
   };
 
   return (
@@ -342,96 +753,95 @@ function App() {
         </div>
       )}
 
-      {/* Header */}
+      {/* Header with Waves & Binary Data-Transfer Animation */}
       <div className="header glass-panel">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <div className="logo-badge">
-            <Share2 className="header-icon" size={28} />
+        <div className="header-data-bg" aria-hidden="true">
+          {/* Undulating Signal Waveforms */}
+          <div className="signal-waves-wrap">
+            <svg className="signal-wave wave-primary" viewBox="0 0 1600 60" preserveAspectRatio="none">
+              <path d="M0,30 Q100,6 200,30 T400,30 T600,30 T800,30 T1000,30 T1200,30 T1400,30 T1600,30" />
+            </svg>
+            <svg className="signal-wave wave-secondary" viewBox="0 0 1600 60" preserveAspectRatio="none">
+              <path d="M0,30 Q100,54 200,30 T400,30 T600,30 T800,30 T1000,30 T1200,30 T1400,30 T1600,30" />
+            </svg>
           </div>
-          <div>
-            <h1>Tranferase Online</h1>
-            <p className="subtitle">Instant peer-to-peer file transfer anywhere without setup</p>
+
+          {/* Flowing Binary Streams */}
+          <div className="binary-stream stream-top">
+            <div className="binary-track">
+              <span>01010100 01110010 01100001 01101110 01110011 01100110 01100101 01110010 01100001 01110011 01100101 00100000 01010000 00110010 01010000 00100000 </span>
+              <span>01010100 01110010 01100001 01101110 01110011 01100110 01100101 01110010 01100001 01110011 01100101 00100000 01010000 00110010 01010000 00100000 </span>
+            </div>
           </div>
+          <div className="binary-stream stream-bottom">
+            <div className="binary-track reverse">
+              <span>11001010 10110011 00110101 11100010 01010110 10101011 00110011 11010101 01101100 10111001 01010101 11000011 10101100 01101010 10110101 11011010 </span>
+              <span>11001010 10110011 00110101 11100010 01010110 10101011 00110011 11010101 01101100 10111001 01010101 11000011 10101100 01101010 10110101 11011010 </span>
+            </div>
+          </div>
+
+          <div className="data-ambient-glow"></div>
         </div>
-        <div className="status-indicator">
-          <span className={`status-dot ${connected ? 'online' : 'offline'}`}></span>
-          <span>{connected ? 'Relay Active' : 'Connecting...'}</span>
+        <div style={{ position: 'relative', zIndex: 2 }}>
+          <h1>Tranferase</h1>
         </div>
       </div>
 
-      {/* Network & Room Switcher Bar */}
-      <div className="network-banner glass-panel">
-        <div className="network-info-left">
-          <div className="network-chip">
-            {networkInfo.isCustom ? <Key size={16} /> : <Wifi size={16} />}
-            <span>
+      {/* Unified Network & Your Device Box (Single Card) */}
+      <div className="network-unified-card glass-panel">
+        <div className="network-unified-top">
+          <div className="network-info-left">
+            <div className="network-chip">
+              {networkInfo.isCustom ? <Key size={16} /> : <Wifi size={16} />}
+              <span>
+                {networkInfo.isCustom 
+                  ? `Custom Room: ${networkInfo.room.replace('custom_', '')}` 
+                  : 'Auto-Matched Local Wi-Fi'}
+              </span>
+            </div>
+            <span className="network-detail">
               {networkInfo.isCustom 
-                ? `Custom Room: ${networkInfo.room.replace('custom_', '')}` 
-                : 'Auto-Matched Local Wi-Fi'}
+                ? 'Devices with the same room code can exchange files directly.' 
+                : 'Devices on your same Wi-Fi router appear automatically.'}
             </span>
           </div>
-          <span className="network-detail">
-            {networkInfo.isCustom 
-              ? 'Devices with the same room code can exchange files directly.' 
-              : 'Devices on your same Wi-Fi router appear automatically.'}
-          </span>
-        </div>
 
-        <div className="room-controls-wrapper">
-          {!networkInfo.isCustom && (
-            <button type="button" onClick={handleCreateRoom} className="room-btn create-btn">
-              <Key size={14} /> Create Room
-            </button>
-          )}
-          <form onSubmit={handleJoinCustomRoom} className="room-form">
-            <input
-              type="text"
-              placeholder="6-digit code"
-              value={roomCodeInput}
-              onChange={(e) => setRoomCodeInput(e.target.value)}
-              className="room-input"
-              maxLength={6}
-            />
-            <button type="submit" className="room-btn join-btn">
-              Join <ArrowRight size={14} />
-            </button>
-            {networkInfo.isCustom && (
-              <button 
-                type="button" 
-                onClick={handleResetToLocalNetwork} 
-                className="room-btn secondary"
-                title="Return to auto-detected local network"
-              >
-                Reset to Wi-Fi
+          <div className="room-controls-wrapper">
+            {!networkInfo.isCustom && (
+              <button type="button" onClick={handleCreateRoom} className="room-btn create-btn">
+                <Key size={14} /> Create Room
               </button>
             )}
-          </form>
-        </div>
-      </div>
-
-      {/* Active Transfer Progress */}
-      {transferProgress && (
-        <div className="progress-banner glass-panel">
-          <div className="progress-header">
-            <span className="file-transferring-name">
-              <Upload size={16} className="spin-slow" /> {transferProgress.fileName}
-            </span>
-            <span className="transfer-percentage">{transferProgress.percent}%</span>
+            <form onSubmit={handleJoinCustomRoom} className="room-form">
+              <input
+                type="text"
+                placeholder="6-digit code"
+                value={roomCodeInput}
+                onChange={(e) => setRoomCodeInput(e.target.value)}
+                className="room-input"
+                maxLength={6}
+              />
+              <button type="submit" className="room-btn join-btn">
+                Join <ArrowRight size={14} />
+              </button>
+              {networkInfo.isCustom && (
+                <button 
+                  type="button" 
+                  onClick={handleResetToLocalNetwork} 
+                  className="room-btn secondary"
+                  title="Return to auto-detected local network"
+                >
+                  Reset to Wi-Fi
+                </button>
+              )}
+            </form>
           </div>
-          <div className="progress-bar-track">
-            <div 
-              className="progress-bar-fill" 
-              style={{ width: `${transferProgress.percent}%` }}
-            ></div>
-          </div>
-          <span className="progress-status-text">{transferProgress.status}</span>
         </div>
-      )}
 
-      {/* Your Device Card & Network Peer List */}
-      <div className="glass-panel main-device-area">
-        <div className="my-info">
-          <div>
+        <div className="network-unified-divider"></div>
+
+        <div className="network-unified-bottom">
+          <div className="your-device-left">
             <div className="label-text">YOUR DEVICE</div>
             {isEditingName ? (
               <div className="rename-input-wrap">
@@ -457,157 +867,691 @@ function App() {
                 </button>
               </div>
             )}
-            <p className="helper-text">
-              Visible as <strong>{getDeviceType()}</strong> to devices in this network
-            </p>
-          </div>
-
-          {peers.length > 0 && (
-            <label className="action-btn broadcast-btn">
-              <Upload size={18} />
-              Broadcast to All ({peers.length})
-              <input 
-                type="file" 
-                className="file-input" 
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    broadcastFile(e.target.files[0]);
-                  }
-                }}
-              />
-            </label>
-          )}
-        </div>
-
-        <div className="section-title-wrap">
-          <div>
-            <h3>Connected Peers</h3>
-            <p className="subtitle">
-              {networkInfo.isCustom 
-                ? 'Other phones and laptops joined with the same room code' 
-                : 'Other devices on your Wi-Fi will pop up here instantly'}
-            </p>
-          </div>
-          <div className="peer-counter">
-            {peers.length} {peers.length === 1 ? 'device' : 'devices'} ready
-          </div>
-        </div>
-
-        {peers.length === 0 ? (
-          <div className="no-peers glass-panel">
-            <div className="pulse-circle">
-              <Smartphone size={36} />
+            <div className="your-device-badges">
+              <span className="device-type-chip">
+                {getDeviceType() === 'mobile' ? <Smartphone size={14} /> : getDeviceType() === 'tablet' ? <Tablet size={14} /> : <Monitor size={14} />}
+                {getDeviceType()}
+              </span>
+              <span className="device-limit-chip" title="Estimated safe file transfer limit based on device browser RAM">
+                <HardDrive size={13} />
+                {getDeviceDataLimit(getDeviceType())}
+              </span>
             </div>
-            <h4>Waiting for nearby devices...</h4>
-            <p style={{ maxWidth: '440px', margin: '0 auto', lineHeight: '1.5' }}>
-              Open this website on your mobile phone or another computer. 
-              {networkInfo.isCustom 
-                ? ` Enter room code "${networkInfo.room.replace('custom_', '')}" to connect.` 
-                : ' If both devices are on the same Wi-Fi, they will discover each other automatically.'}
-            </p>
           </div>
-        ) : (
-          <div className="peers-grid">
-            {peers.map(peer => (
-              <div 
-                key={peer.id} 
-                className="peer-card glass-panel"
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.add('drag-active');
-                }}
-                onDragLeave={(e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.remove('drag-active');
-                }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.remove('drag-active');
-                  if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                    sendFile(peer.id, e.dataTransfer.files[0]);
-                  }
-                }}
+
+          <div className="your-device-right">
+            {peers.length > 0 && queue.length > 0 && (
+              <button 
+                type="button" 
+                className="action-btn broadcast-btn"
+                onClick={handleOpenRecipientModal}
               >
-                <div className="peer-avatar">
-                  {peer.deviceType === 'mobile' || peer.deviceType === 'tablet' 
-                    ? <Smartphone size={32} /> 
-                    : <Monitor size={32} />}
-                </div>
-                <div className="peer-name">{peer.name}</div>
-                <div className="peer-type-tag">{peer.deviceType}</div>
-                
-                <label className="action-btn send-btn">
+                <Send size={16} />
+                Send Queue to All Peers ({queue.length})
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Active Transfer Progress (if any) */}
+      {transferProgress && (
+        <div className="progress-banner glass-panel">
+          <div className="progress-header">
+            <span className="file-transferring-name">
+              <Upload size={16} className="spin-slow" /> {transferProgress.fileName}
+            </span>
+            <span className="transfer-percentage">{transferProgress.percent}%</span>
+          </div>
+          <div className="progress-bar-track">
+            <div 
+              className="progress-bar-fill" 
+              style={{ width: `${transferProgress.percent}%` }}
+            ></div>
+          </div>
+          <span className="progress-status-text">{transferProgress.status}</span>
+        </div>
+      )}
+
+      {/* 3. Main Dashboard Layout: Left Column (Queue & Inputs) | Right Column (Connected Peers) */}
+      <div className="dashboard-grid-layout">
+        
+        {/* Left Column: Uploads, Sending Queue, and Received Files */}
+        <div className="dashboard-left-col">
+          
+          {/* Upload & Paste Controls Area */}
+          <div className="glass-panel upload-dashboard">
+            <div className="dashboard-header">
+              <div>
+                <h3>Prepare Files & Text</h3>
+                <p className="subtitle">Select file(s) or paste text notes to build your transfer queue</p>
+              </div>
+              <div className="dashboard-actions">
+                <label className="action-btn select-files-btn">
                   <Upload size={18} />
-                  Send File
+                  Select File(s)
                   <input 
                     type="file" 
+                    multiple
                     className="file-input" 
                     onChange={(e) => {
-                      if (e.target.files && e.target.files[0]) {
-                        sendFile(peer.id, e.target.files[0]);
+                      if (e.target.files && e.target.files.length > 0) {
+                        addFilesToQueue(e.target.files);
+                        e.target.value = ''; // reset so same files can be re-selected if desired
                       }
                     }}
                   />
                 </label>
-                <p className="drag-hint">
-                  tap to choose or drop file
-                </p>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
 
-      {/* Received Files Area */}
-      {receivedFiles.length > 0 && (
-        <div className="glass-panel transfer-area">
-          <div className="transfer-header-row">
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Download size={22} className="accent-icon" />
-              Received Files ({receivedFiles.length})
-            </h3>
-            <button 
-              onClick={() => setReceivedFiles([])} 
-              className="clear-link"
-            >
-              Clear all
-            </button>
+            {/* Paste Text Section */}
+            <div className="paste-text-card">
+              <div className="paste-text-header">
+                <span className="paste-label">
+                  <MessageSquare size={16} /> Paste or Type Text
+                </span>
+                <button 
+                  type="button" 
+                  className="paste-clipboard-btn"
+                  onClick={handlePasteFromClipboard}
+                  title="Read clipboard text directly"
+                >
+                  <Clipboard size={14} /> Paste from Clipboard
+                </button>
+              </div>
+              <textarea
+                ref={textareaRef}
+                className="paste-textarea"
+                placeholder="Type or paste copied text, links, or notes here... Click 'Add to Queue' or press Ctrl+Enter to add."
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    handleAddTextInput();
+                  }
+                }}
+                rows={3}
+              />
+              <div className="paste-btn-row">
+                <span className="keyboard-hint">Press Ctrl+Enter or click to add</span>
+                <button 
+                  type="button" 
+                  className="action-btn small-btn add-text-btn"
+                  onClick={handleAddTextInput}
+                >
+                  <Plus size={15} /> Add Text to Queue
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="transfer-list">
-            {receivedFiles.map((file, i) => (
-              <div key={i} className="transfer-item">
-                <div className="transfer-meta-row">
-                  <div className="transfer-info">
-                    <div className="file-icon-box">
-                      <File size={22} color="var(--accent-color)" />
-                    </div>
-                    <div>
-                      <div className="transfer-name">{file.name}</div>
-                      <div className="transfer-size">
-                        {(file.size / 1024).toFixed(1)} KB • from {file.senderName} • {file.time}
-                      </div>
-                    </div>
-                  </div>
-                  <a 
-                    href={file.data} 
-                    download={file.name}
-                    className="action-btn download-btn"
-                  >
-                    <Download size={16} /> Save to Device
-                  </a>
+          {/* Sending Queue Area - ALWAYS VISIBLE with Drag & Drop */}
+          <div 
+            className={`glass-panel queue-panel ${isQueueDragging ? 'drag-active' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsQueueDragging(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              setIsQueueDragging(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsQueueDragging(false);
+              if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                addFilesToQueue(e.dataTransfer.files);
+              }
+            }}
+          >
+            {/* Hidden file input for clicking to browse from queue */}
+            <input 
+              type="file" 
+              multiple
+              ref={queueFileInputRef}
+              className="file-input"
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  addFilesToQueue(e.target.files);
+                  e.target.value = '';
+                }
+              }}
+            />
+
+            <div className="queue-header-row">
+              <div className="queue-title-wrap">
+                <div className="queue-badge-count">
+                  <Layers size={18} />
+                  <span>Sending Queue ({queue.length})</span>
                 </div>
-
-                {file.type && file.type.startsWith('image/') && (
-                  <div className="preview-wrap">
-                    <img src={file.data} alt={file.name} className="image-preview" />
-                  </div>
+                {queue.length > 0 && (
+                  <span className="queue-total-size">
+                    Total: <strong>{formatBytes(totalQueueSize)}</strong>
+                  </span>
                 )}
               </div>
-            ))}
+
+              {queue.length > 0 && (
+                <div className="queue-header-actions">
+                  <button 
+                    type="button" 
+                    onClick={clearQueue} 
+                    className="clear-link"
+                    title="Remove all items"
+                  >
+                    Clear Queue
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={handleOpenRecipientModal} 
+                    disabled={isSendingQueue}
+                    className="action-btn send-queue-btn"
+                  >
+                    <Send size={16} /> Send All ({queue.length})
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Empty state when queue has 0 items */}
+            {queue.length === 0 ? (
+              <div 
+                className={`queue-empty-state ${isQueueDragging ? 'drag-active' : ''}`}
+                onClick={() => queueFileInputRef.current?.click()}
+                title="Drop files here or click to browse"
+              >
+                <div className="empty-state-icon-wrap">
+                  <Upload size={28} className={isQueueDragging ? 'spin-slow' : ''} color="var(--accent-color)" />
+                </div>
+                <p>
+                  <strong>Drop files here</strong> to add to sending queue, or click to browse
+                </p>
+                <span className="queue-empty-sub">You can also select files or paste text in the box above</span>
+              </div>
+            ) : (
+              <>
+                {/* Size Warning Banner if queue exceeds safe limit */}
+                {isOverLimit && (
+                  <div className="queue-size-warning">
+                    <AlertTriangle size={20} className="warning-icon" />
+                    <div>
+                      <strong>High Transfer Size Warning:</strong> Total queued size ({formatBytes(totalQueueSize)}) exceeds the safe browser limit of 2 GB. Devices with low RAM may crash or terminate the transfer.
+                    </div>
+                  </div>
+                )}
+
+                {/* Queued Items List */}
+                <div className="queue-items-list">
+                  {queue.map((item, index) => (
+                    <div key={item.id} className="queue-item-card">
+                      <div className="queue-item-top">
+                        <div className="queue-item-info">
+                          <div className="queue-icon-box">
+                            {item.isText ? <FileText size={20} color="#60a5fa" /> : <File size={20} color="var(--accent-color)" />}
+                          </div>
+                          <div className={`queue-file-details ${editingItemId === item.id ? 'editing' : ''}`}>
+                            {editingItemId === item.id ? (
+                              <form 
+                                className="queue-rename-form"
+                                onSubmit={(e) => {
+                                  e.preventDefault();
+                                  handleSaveRename(item.id);
+                                }}
+                              >
+                                <span className="queue-rename-index">{index + 1}.</span>
+                                <div className="queue-rename-input-wrap">
+                                  <input
+                                    type="text"
+                                    className="queue-rename-input"
+                                    value={editingItemBaseName}
+                                    onChange={(e) => setEditingItemBaseName(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Escape') {
+                                        handleCancelRename();
+                                      }
+                                    }}
+                                    placeholder="Enter file name..."
+                                    autoFocus
+                                  />
+                                  {editingItemExt && (
+                                    <span className="queue-rename-ext-badge" title="File extension is locked">
+                                      {editingItemExt}
+                                    </span>
+                                  )}
+                                </div>
+                                <button 
+                                  type="submit" 
+                                  className="queue-rename-action-btn save-btn" 
+                                  title="Save file name (Enter)"
+                                >
+                                  <Check size={13} />
+                                  <span>Save</span>
+                                </button>
+                                <button 
+                                  type="button" 
+                                  className="queue-rename-action-btn cancel-btn"
+                                  onClick={handleCancelRename}
+                                  title="Cancel rename (Esc)"
+                                >
+                                  <X size={13} />
+                                </button>
+                              </form>
+                            ) : (
+                              <div className="queue-file-name-row">
+                                <span className="queue-file-name" title={item.name}>
+                                  {index + 1}. {item.name}
+                                </span>
+                                <button 
+                                  type="button" 
+                                  className="queue-rename-btn"
+                                  onClick={() => handleStartRename(item)}
+                                  title="Rename this file before sending"
+                                >
+                                  <Pencil size={12} />
+                                  <span>Rename</span>
+                                </button>
+                                {item.isText && (
+                                  <button 
+                                    type="button" 
+                                    className="queue-rename-btn queue-edit-content-btn"
+                                    onClick={() => handleStartEditText(item)}
+                                    title="Edit the content of this text note"
+                                  >
+                                    <FileText size={12} />
+                                    <span>Edit Text</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            <div className="queue-file-meta">
+                              {formatBytes(item.size)} {item.isText ? '• Text Snippet' : `• ${item.type || 'File'}`}
+                            </div>
+
+                            {/* Inline text content editor */}
+                            {editingTextId === item.id ? (
+                              <div className="queue-text-editor-box">
+                                <textarea
+                                  className="queue-text-editor-textarea"
+                                  value={editingTextContent}
+                                  onChange={(e) => setEditingTextContent(e.target.value)}
+                                  rows={4}
+                                  placeholder="Edit note text..."
+                                  autoFocus
+                                />
+                                <div className="queue-text-editor-actions">
+                                  <button 
+                                    type="button" 
+                                    className="queue-rename-action-btn save-btn"
+                                    onClick={() => handleSaveEditText(item.id)}
+                                  >
+                                    <Check size={13} />
+                                    <span>Save Content</span>
+                                  </button>
+                                  <button 
+                                    type="button" 
+                                    className="queue-rename-action-btn cancel-btn"
+                                    onClick={handleCancelEditText}
+                                  >
+                                    <X size={13} />
+                                    <span>Cancel</span>
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              item.isText && item.textContent && (
+                                <div 
+                                  className="queue-text-preview" 
+                                  onClick={() => handleStartEditText(item)}
+                                  title="Click to edit content"
+                                >
+                                  <span>“{item.textContent.length > 100 ? item.textContent.slice(0, 100) + '...' : item.textContent}”</span>
+                                  <span className="queue-text-preview-hint">(click to edit)</span>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        </div>
+
+                        <button 
+                          type="button" 
+                          className="queue-remove-btn"
+                          onClick={() => removeFromQueue(item.id)}
+                          title="Remove item"
+                        >
+                          <X size={16} />
+                        </button>
+                      </div>
+
+                      {/* Caption Input for each file */}
+                      <div className="queue-caption-row">
+                        <input
+                          type="text"
+                          className="queue-caption-input"
+                          placeholder="Add an optional caption or note for this item..."
+                          value={item.caption}
+                          onChange={(e) => updateQueueCaption(item.id, e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Drop more files footer when queue has items */}
+                <div 
+                  className={`queue-drop-footer ${isQueueDragging ? 'drag-active' : ''}`}
+                  onClick={() => queueFileInputRef.current?.click()}
+                  title="Drop more files here or click to browse"
+                >
+                  <Plus size={15} /> Drop more files here or click to browse
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Received Files Area */}
+          {receivedFiles.length > 0 && (
+            <div className="glass-panel transfer-area">
+              <div className="transfer-header-row">
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Download size={22} className="accent-icon" />
+                  Received Files & Text ({receivedFiles.length})
+                </h3>
+                <button 
+                  onClick={() => setReceivedFiles([])} 
+                  className="clear-link"
+                >
+                  Clear all
+                </button>
+              </div>
+
+              <div className="transfer-list">
+                {receivedFiles.map((file) => (
+                  <div key={file.id} className="transfer-item">
+                    <div className="transfer-meta-row">
+                      <div className="transfer-info">
+                        <div className="file-icon-box">
+                          {file.isText ? <FileText size={22} color="#60a5fa" /> : <File size={22} color="var(--accent-color)" />}
+                        </div>
+                        <div>
+                          <div className="transfer-name">{file.name}</div>
+                          <div className="transfer-size">
+                            {formatBytes(file.size)} • from {file.senderName} • {file.time}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="received-actions">
+                        {file.textPreview && (
+                          <button 
+                            type="button"
+                            onClick={() => handleCopyText(file.textPreview, file.id)}
+                            className="action-btn small-btn secondary"
+                          >
+                            {copiedId === file.id ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
+                            {copiedId === file.id ? 'Copied!' : 'Copy Text'}
+                          </button>
+                        )}
+                        <a 
+                          href={file.data} 
+                          download={file.name}
+                          className="action-btn download-btn"
+                        >
+                          <Download size={16} /> Save to Device
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Display Caption if provided */}
+                    {file.caption && (
+                      <div className="received-caption-bubble">
+                        <MessageSquare size={14} className="caption-icon" />
+                        <span>{file.caption}</span>
+                      </div>
+                    )}
+
+                    {/* Text preview */}
+                    {file.textPreview && (
+                      <div className="received-text-box">
+                        <pre>{file.textPreview}</pre>
+                      </div>
+                    )}
+
+                    {/* Image preview */}
+                    {file.type && file.type.startsWith('image/') && (
+                      <div className="preview-wrap">
+                        <img src={file.data} alt={file.name} className="image-preview" />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Connected Peers Sidebar */}
+        <aside className="dashboard-right-col">
+          <div className="glass-panel peers-sidebar-panel">
+            <div className="peers-sidebar-header">
+              <div>
+                <h3>Connected Peers</h3>
+                <p className="subtitle">
+                  {networkInfo.isCustom 
+                    ? 'Devices joined with this room code' 
+                    : 'Other devices on your Wi-Fi pop up here automatically'}
+                </p>
+              </div>
+              <div className="peer-counter">
+                {peers.length} {peers.length === 1 ? 'device' : 'devices'} ready
+              </div>
+            </div>
+
+            {peers.length === 0 ? (
+              <div className="no-peers glass-panel">
+                <div className="pulse-circle">
+                  <Smartphone size={32} />
+                </div>
+                <h4>Waiting for nearby devices...</h4>
+                <p>
+                  Open this site on your mobile phone or laptop.
+                  {networkInfo.isCustom 
+                    ? ` Enter code "${networkInfo.room.replace('custom_', '')}" to connect.` 
+                    : ' Devices on the same Wi-Fi discover each other automatically.'}
+                </p>
+              </div>
+            ) : (
+              <div className="peers-sidebar-list">
+                {peers.map(peer => (
+                  <div 
+                    key={peer.id} 
+                    className="peer-sidebar-card glass-panel"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.add('drag-active');
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('drag-active');
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('drag-active');
+                      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                        addFilesToQueue(e.dataTransfer.files);
+                      }
+                    }}
+                  >
+                    <div className="peer-card-top-row">
+                      <div className="peer-sidebar-avatar">
+                        {peer.deviceType === 'mobile' ? (
+                          <Smartphone size={24} />
+                        ) : peer.deviceType === 'tablet' ? (
+                          <Tablet size={24} />
+                        ) : (
+                          <Monitor size={24} />
+                        )}
+                      </div>
+                      <div className="peer-meta-text">
+                        <div className="peer-name">{peer.name}</div>
+                        <div className="peer-status-row">
+                          <span className="peer-type-tag">{peer.deviceType}</span>
+                          <span className="peer-online-tag">
+                            <span className="status-dot online"></span> Ready
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Data Limit Badge for device type */}
+                    <div className="peer-data-limit-box" title="Maximum recommended file size to transfer without exhausting this device's browser memory">
+                      <HardDrive size={13} className="limit-icon" />
+                      <span>{getDeviceDataLimit(peer.deviceType)}</span>
+                    </div>
+
+                    <p className="drag-hint">
+                      drop files here to add to queue
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+
+      </div>
+
+      {/* Recipient Selection Popup Modal */}
+      {showRecipientModal && (
+        <div className="modal-backdrop" onClick={() => setShowRecipientModal(false)}>
+          <div className="modal-content glass-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title-wrap">
+                <Send size={20} color="var(--accent-color)" />
+                <h3>Select Recipients</h3>
+              </div>
+              <button 
+                type="button" 
+                className="modal-close-btn"
+                onClick={() => setShowRecipientModal(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <p className="modal-subtitle">
+              Choose which connected device(s) should receive your {queue.length} queued item(s) ({formatBytes(totalQueueSize)}).
+            </p>
+
+            {/* Peer Search Bar */}
+            <div className="modal-search-bar">
+              <Search size={16} className="search-icon" />
+              <input
+                type="text"
+                placeholder="Search peers by name or device type..."
+                value={recipientSearch}
+                onChange={(e) => setRecipientSearch(e.target.value)}
+                className="modal-search-input"
+                autoFocus
+              />
+              {recipientSearch && (
+                <button 
+                  type="button" 
+                  className="search-clear-btn" 
+                  onClick={() => setRecipientSearch('')}
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Quick Toggle Select All */}
+            <div className="modal-selection-controls">
+              <button 
+                type="button" 
+                className="select-all-btn"
+                onClick={toggleSelectAllPeers}
+              >
+                {selectedPeerIds.length === filteredPeers.length && filteredPeers.length > 0 ? (
+                  <>
+                    <CheckSquare size={16} /> Deselect All
+                  </>
+                ) : (
+                  <>
+                    <Square size={16} /> Select All ({filteredPeers.length})
+                  </>
+                )}
+              </button>
+              <span className="selected-counter">
+                {selectedPeerIds.length} of {peers.length} selected
+              </span>
+            </div>
+
+            {/* Peers List with Checkboxes */}
+            <div className="modal-peers-list">
+              {filteredPeers.length === 0 ? (
+                <div className="modal-no-results">
+                  No connected devices match "{recipientSearch}"
+                </div>
+              ) : (
+                filteredPeers.map(peer => {
+                  const isSelected = selectedPeerIds.includes(peer.id);
+                  return (
+                    <div 
+                      key={peer.id} 
+                      className={`modal-peer-item ${isSelected ? 'selected' : ''}`}
+                      onClick={() => toggleSelectPeer(peer.id)}
+                    >
+                      <div className="peer-item-left">
+                        <div className="modal-checkbox">
+                          {isSelected ? <CheckSquare size={18} color="var(--accent-color)" /> : <Square size={18} color="#94a3b8" />}
+                        </div>
+                        <div className="modal-peer-avatar">
+                          {peer.deviceType === 'mobile' ? (
+                            <Smartphone size={20} />
+                          ) : peer.deviceType === 'tablet' ? (
+                            <Tablet size={20} />
+                          ) : (
+                            <Monitor size={20} />
+                          )}
+                        </div>
+                        <div>
+                          <div className="modal-peer-name">{peer.name}</div>
+                          <div className="modal-peer-type">{peer.deviceType} • {getDeviceDataLimit(peer.deviceType)}</div>
+                        </div>
+                      </div>
+                      <div className="modal-peer-status">
+                        <span className="status-dot online"></span> Ready
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="modal-footer">
+              <button 
+                type="button" 
+                className="room-btn secondary"
+                onClick={() => setShowRecipientModal(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="action-btn send-btn"
+                disabled={selectedPeerIds.length === 0 || isSendingQueue}
+                onClick={() => startSendingQueue(selectedPeerIds)}
+              >
+                <Send size={16} /> Send to {selectedPeerIds.length} Recipient{selectedPeerIds.length === 1 ? '' : 's'}
+              </button>
+            </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }
