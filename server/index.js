@@ -57,23 +57,75 @@ const peers = new Map();
 
 // Map of roomCode -> {
 //   code: string,
+//   creatorUserId: string,
+//   creatorName: string,
 //   hostUserId: string,
-//   participants: [ { socketId, userId, name, deviceType, joinedAt } ],
+//   participants: [ { socketId, userId, name, deviceType, joinedAt, isCreator } ],
 //   disconnectTimers: Map<userId, Timeout>
 // }
 const rooms = new Map();
 
-function getOrCreateRoom(code, creator) {
+function getOrCreateRoom(code, user, isExplicitCreator = false) {
   const normCode = code.toLowerCase().trim();
   if (!rooms.has(normCode)) {
     rooms.set(normCode, {
       code: normCode,
-      hostUserId: creator.userId,
+      creatorUserId: user.userId,
+      creatorName: user.name,
+      hostUserId: user.userId,
       participants: [],
       disconnectTimers: new Map()
     });
+  } else {
+    const room = rooms.get(normCode);
+    if (isExplicitCreator && (!room.creatorUserId || room.participants.length === 0)) {
+      room.creatorUserId = user.userId;
+      room.creatorName = user.name;
+    }
   }
   return rooms.get(normCode);
+}
+
+function resolveRoomHost(room) {
+  if (!room || room.participants.length === 0) return null;
+
+  // RULE: If room-maker is present in the room, he MUST be the host!
+  const creator = room.participants.find(p => p.userId === room.creatorUserId);
+  let targetHost = null;
+
+  if (creator) {
+    targetHost = creator;
+  } else {
+    // If room-maker is absent, host is current host if still in room, or oldest remaining participant (second-arrived user)
+    const existingHost = room.participants.find(p => p.userId === room.hostUserId);
+    targetHost = existingHost || room.participants[0];
+  }
+
+  const previousHostUserId = room.hostUserId;
+  room.hostUserId = targetHost.userId;
+
+  // If host changed, notify room participants
+  if (previousHostUserId && previousHostUserId !== targetHost.userId) {
+    const isCreatorHost = (targetHost.userId === room.creatorUserId);
+    console.log(`Host privilege in "${room.code}" transferred to: ${targetHost.name} (${targetHost.userId}) [isRoomMaker: ${isCreatorHost}]`);
+    io.to(`custom_${room.code}`).emit('host-changed', {
+      newHostId: targetHost.socketId,
+      newHostUserId: targetHost.userId,
+      newHostName: targetHost.name,
+      isRoomMaker: isCreatorHost
+    });
+  }
+
+  io.to(`custom_${room.code}`).emit('room-info', {
+    code: room.code,
+    creatorUserId: room.creatorUserId,
+    hostUserId: room.hostUserId,
+    hostName: targetHost.name,
+    isRoomMakerPresent: !!creator,
+    participantsCount: room.participants.length
+  });
+
+  return targetHost;
 }
 
 function removeParticipantFromRoom(roomCode, userId, socketId) {
@@ -97,26 +149,8 @@ function removeParticipantFromRoom(roomCode, userId, socketId) {
     return;
   }
 
-  // If the departing participant was the host, transfer privilege to the second arrived user (oldest remaining)
-  if (room.hostUserId === userId) {
-    const nextHost = room.participants[0];
-    room.hostUserId = nextHost.userId;
-    console.log(`Host privilege in "${normCode}" transferred to next participant: ${nextHost.name} (${nextHost.userId})`);
-    
-    io.to(`custom_${normCode}`).emit('host-changed', {
-      newHostId: nextHost.socketId,
-      newHostUserId: nextHost.userId,
-      newHostName: nextHost.name
-    });
-  }
-
-  const currentHost = room.participants.find(p => p.userId === room.hostUserId);
-  io.to(`custom_${normCode}`).emit('room-info', {
-    code: normCode,
-    hostUserId: room.hostUserId,
-    hostName: currentHost ? currentHost.name : 'Unknown',
-    participantsCount: room.participants.length
-  });
+  // If participants remain, resolve host (room maker if present, otherwise oldest remaining)
+  resolveRoomHost(room);
 }
 
 io.on('connection', (socket) => {
@@ -144,6 +178,8 @@ io.on('connection', (socket) => {
 
   peers.set(socket.id, peerData);
 
+  const isExplicitCreator = query.isCreator === 'true';
+
   let targetRoom = defaultNetworkRoom;
   let isCustom = false;
   let isHost = false;
@@ -151,7 +187,7 @@ io.on('connection', (socket) => {
 
   // If reconnecting with a saved custom room (e.g. browser refresh)
   if (requestedRoomCode) {
-    const room = getOrCreateRoom(requestedRoomCode, { userId: persistentUserId, name: initialName });
+    const room = getOrCreateRoom(requestedRoomCode, { userId: persistentUserId, name: initialName }, isExplicitCreator);
 
     // Cancel refresh grace-period timer if user reconnected before timeout
     if (room.disconnectTimers.has(persistentUserId)) {
@@ -169,7 +205,8 @@ io.on('connection', (socket) => {
         userId: persistentUserId,
         name: initialName,
         deviceType,
-        joinedAt: Date.now()
+        joinedAt: Date.now(),
+        isCreator: isExplicitCreator || (room.creatorUserId === persistentUserId)
       });
     }
 
@@ -177,9 +214,11 @@ io.on('connection', (socket) => {
     isCustom = true;
     peerData.currentRoom = targetRoom;
     peerData.isCustomRoom = true;
+
+    // Resolve room host: If room-maker is present, he MUST be the host!
+    const activeHost = resolveRoomHost(room);
     isHost = (room.hostUserId === persistentUserId);
-    const hostUser = room.participants.find(p => p.userId === room.hostUserId);
-    currentHostName = hostUser ? hostUser.name : (isHost ? initialName : 'Host');
+    currentHostName = activeHost ? activeHost.name : (isHost ? initialName : 'Host');
   }
 
   socket.join(targetRoom);
@@ -205,19 +244,8 @@ io.on('connection', (socket) => {
   // Broadcast to other peers in the room that this user joined
   socket.to(targetRoom).emit('peer-joined', peerData);
 
-  if (isCustom) {
-    const room = rooms.get(requestedRoomCode);
-    const actualHost = room ? room.participants.find(p => p.userId === room.hostUserId) : null;
-    io.to(targetRoom).emit('room-info', {
-      code: requestedRoomCode,
-      hostUserId: room ? room.hostUserId : persistentUserId,
-      hostName: actualHost ? actualHost.name : currentHostName,
-      participantsCount: room ? room.participants.length : 1
-    });
-  }
-
   // Join a custom room code
-  socket.on('join-room', ({ roomCode }, callback) => {
+  socket.on('join-room', ({ roomCode, isCreator: explicitCreatorFlag }, callback) => {
     const trimmed = (roomCode || '').trim().toLowerCase();
     const oldRoom = peerData.currentRoom;
 
@@ -254,7 +282,8 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const room = getOrCreateRoom(trimmed, { userId: peerData.userId, name: peerData.name });
+    const isCreatorJoin = !!explicitCreatorFlag;
+    const room = getOrCreateRoom(trimmed, { userId: peerData.userId, name: peerData.name }, isCreatorJoin);
 
     if (room.disconnectTimers.has(peerData.userId)) {
       clearTimeout(room.disconnectTimers.get(peerData.userId));
@@ -271,7 +300,8 @@ io.on('connection', (socket) => {
         userId: peerData.userId,
         name: peerData.name,
         deviceType: peerData.deviceType,
-        joinedAt: Date.now()
+        joinedAt: Date.now(),
+        isCreator: isCreatorJoin || (room.creatorUserId === peerData.userId)
       });
     }
 
@@ -280,9 +310,10 @@ io.on('connection', (socket) => {
     peerData.isCustomRoom = true;
     socket.join(newRoomName);
 
+    // Resolve room host: If room-maker is present, he MUST be the host!
+    const activeHost = resolveRoomHost(room);
     const isHostNow = (room.hostUserId === peerData.userId);
-    const hostUser = room.participants.find(p => p.userId === room.hostUserId);
-    const hostName = hostUser ? hostUser.name : (isHostNow ? peerData.name : 'Host');
+    const hostName = activeHost ? activeHost.name : (isHostNow ? peerData.name : 'Host');
 
     const newRoomPeers = Array.from(peers.values())
       .filter(p => p.currentRoom === newRoomName && p.id !== socket.id);
@@ -297,13 +328,6 @@ io.on('connection', (socket) => {
 
     socket.emit('peers-list', newRoomPeers);
     socket.to(newRoomName).emit('peer-joined', peerData);
-
-    io.to(newRoomName).emit('room-info', {
-      code: trimmed,
-      hostUserId: room.hostUserId,
-      hostName,
-      participantsCount: room.participants.length
-    });
 
     if (callback) callback({ success: true, room: newRoomName, isHost: isHostNow });
   });

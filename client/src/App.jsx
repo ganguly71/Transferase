@@ -164,6 +164,7 @@ function App() {
   useEffect(() => {
     const savedRoom = sessionStorage.getItem('transferase_room_code') || '';
     const savedName = sessionStorage.getItem('transferase_device_name') || '';
+    const isSavedCreator = savedRoom ? (sessionStorage.getItem('transferase_creator_room_' + savedRoom) === 'true') : false;
 
     const newSocket = io(SERVER_URL, { 
       maxHttpBufferSize: 1e8, // allow up to 100MB socket packets
@@ -171,7 +172,8 @@ function App() {
         deviceType: getDeviceType(),
         userId: getStoredUserId(),
         roomCode: savedRoom,
-        savedName: savedName
+        savedName: savedName,
+        isCreator: isSavedCreator ? 'true' : 'false'
       }
     });
     setSocket(newSocket);
@@ -226,10 +228,18 @@ function App() {
       setRoomHostName(data.newHostName);
       if (data.newHostId === newSocket.id || data.newHostUserId === getStoredUserId()) {
         setIsHost(true);
-        showToast('Room host left. You now have host and room-closing privileges!', 'success');
+        if (data.isRoomMaker) {
+          showToast('Welcome back! Host privileges restored to you.', 'success');
+        } else {
+          showToast('Room host absent. You now have temporary host privileges.', 'success');
+        }
       } else {
         setIsHost(false);
-        showToast(`${data.newHostName} is now the room host.`, 'info');
+        if (data.isRoomMaker) {
+          showToast(`Room maker (${data.newHostName}) is present and has host privileges.`, 'info');
+        } else {
+          showToast(`${data.newHostName} is now the room host.`, 'info');
+        }
       }
     });
 
@@ -867,7 +877,8 @@ function App() {
     if (!socket) return;
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     sessionStorage.setItem('transferase_room_code', code);
-    socket.emit('join-room', { roomCode: code }, (res) => {
+    sessionStorage.setItem('transferase_creator_room_' + code, 'true');
+    socket.emit('join-room', { roomCode: code, isCreator: true }, (res) => {
       if (res.success) {
         showToast(`Created secure room: ${code}`, 'success');
       }
@@ -880,7 +891,8 @@ function App() {
     const clean = roomCodeInput.trim().toLowerCase();
     if (!clean) return;
     sessionStorage.setItem('transferase_room_code', clean);
-    socket.emit('join-room', { roomCode: clean }, (res) => {
+    const isSavedCreator = sessionStorage.getItem('transferase_creator_room_' + clean) === 'true';
+    socket.emit('join-room', { roomCode: clean, isCreator: isSavedCreator }, (res) => {
       if (res.success) {
         setRoomCodeInput('');
       }
@@ -898,6 +910,10 @@ function App() {
   const handleCloseRoom = () => {
     if (!socket || !isHost) return;
     if (window.confirm('Are you sure you want to close this room? All participants will be returned to their local network.')) {
+      const code = networkInfo.roomCode || sessionStorage.getItem('transferase_room_code');
+      if (code) {
+        sessionStorage.removeItem('transferase_creator_room_' + code);
+      }
       sessionStorage.removeItem('transferase_room_code');
       socket.emit('close-room', (res) => {
         if (res && res.success) {
