@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
+import JSZip from 'jszip';
 import { 
   Share2, 
   Monitor, 
@@ -27,7 +28,8 @@ import {
   Check,
   Layers,
   HardDrive,
-  Pencil
+  Pencil,
+  Archive
 } from 'lucide-react';
 import './App.css';
 
@@ -112,6 +114,7 @@ function App() {
   const [editNameValue, setEditNameValue] = useState('');
   const [peers, setPeers] = useState([]);
   const [receivedFiles, setReceivedFiles] = useState([]);
+  const [isZipping, setIsZipping] = useState(false);
   const [transferProgress, setTransferProgress] = useState(null); // { fileName, percent, status }
   const [notification, setNotification] = useState(null);
 
@@ -260,6 +263,7 @@ function App() {
               size: fileTransfer.size,
               senderName: fileTransfer.senderName,
               data: blobUrl,
+              blob: blob,
               time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             }, ...prev]);
 
@@ -562,6 +566,93 @@ function App() {
     handleCancelRename();
     handleCancelEditText();
     setQueue([]);
+  };
+
+  // Download all received files as a ZIP archive or direct download
+  const handleDownloadAll = async () => {
+    if (receivedFiles.length === 0) return;
+
+    // Single item direct save
+    if (receivedFiles.length === 1) {
+      const single = receivedFiles[0];
+      const link = document.createElement('a');
+      link.href = single.data;
+      link.download = single.name || 'received_file';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast(`Downloading ${single.name}...`, 'success');
+      return;
+    }
+
+    setIsZipping(true);
+    showToast(`Archiving ${receivedFiles.length} items into ZIP...`, 'info');
+
+    try {
+      const zip = new JSZip();
+      const existingZipNames = [];
+
+      for (const item of receivedFiles) {
+        let blob = item.blob;
+        if (!blob && item.data) {
+          try {
+            const resp = await fetch(item.data);
+            blob = await resp.blob();
+          } catch (e) {
+            console.warn('Could not fetch blob from object URL', e);
+          }
+        }
+
+        let fileName = item.name || (item.isText ? 'note.txt' : 'file');
+        if (item.isText && !fileName.includes('.')) {
+          fileName += '.txt';
+        }
+        const safeName = resolveDuplicateName(fileName, existingZipNames);
+        existingZipNames.push(safeName);
+
+        if (blob) {
+          zip.file(safeName, blob);
+        } else if (item.textPreview) {
+          zip.file(safeName, item.textPreview);
+        }
+      }
+
+      const zipBlob = await zip.generateAsync({ 
+        type: 'blob',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 }
+      });
+
+      const zipUrl = URL.createObjectURL(zipBlob);
+      const downloadLink = document.createElement('a');
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+      downloadLink.href = zipUrl;
+      downloadLink.download = `Transferase_Files_${dateStr}.zip`;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      document.body.removeChild(downloadLink);
+
+      setTimeout(() => URL.revokeObjectURL(zipUrl), 45000);
+      showToast(`Downloaded all ${receivedFiles.length} items as ZIP archive!`, 'success');
+    } catch (err) {
+      console.error('Failed to generate ZIP archive', err);
+      showToast('ZIP archiving failed. Downloading items individually...', 'error');
+
+      // Sequential fallback
+      receivedFiles.forEach((file, index) => {
+        setTimeout(() => {
+          const a = document.createElement('a');
+          a.href = file.data;
+          a.download = file.name;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }, index * 350);
+      });
+    } finally {
+      setIsZipping(false);
+    }
   };
 
   // Open recipient selection modal or handle send
@@ -1223,12 +1314,25 @@ function App() {
                   <Download size={22} className="accent-icon" />
                   Received Files & Text ({receivedFiles.length})
                 </h3>
-                <button 
-                  onClick={() => setReceivedFiles([])} 
-                  className="clear-link"
-                >
-                  Clear all
-                </button>
+                <div className="transfer-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button 
+                    type="button"
+                    onClick={handleDownloadAll} 
+                    className="action-btn download-all-btn"
+                    disabled={isZipping}
+                    title="Download all received items as a ZIP archive"
+                  >
+                    <Archive size={16} />
+                    <span>{isZipping ? 'Archiving ZIP...' : `Download All (${receivedFiles.length})`}</span>
+                  </button>
+                  <button 
+                    onClick={() => setReceivedFiles([])} 
+                    className="clear-link"
+                    title="Clear received list"
+                  >
+                    Clear all
+                  </button>
+                </div>
               </div>
 
               <div className="transfer-list">
