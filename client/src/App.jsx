@@ -128,6 +128,7 @@ function App() {
 
   // Recipient Modal State
   const [showRecipientModal, setShowRecipientModal] = useState(false);
+  const [showTextModal, setShowTextModal] = useState(false);
   const [recipientSearch, setRecipientSearch] = useState('');
   const [selectedPeerIds, setSelectedPeerIds] = useState([]);
   const [copiedId, setCopiedId] = useState(null);
@@ -883,7 +884,32 @@ function App() {
             </div>
           </div>
 
-          <div className="your-device-right">
+          <div className="your-device-right" style={{ display: 'flex', gap: '0.65rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <label className="action-btn select-files-btn">
+              <Upload size={16} />
+              Select File(s)
+              <input 
+                type="file" 
+                multiple
+                className="file-input" 
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    const files = Array.from(e.target.files);
+                    addFilesToQueue(files);
+                    e.target.value = ''; // reset so same files can be re-selected if desired
+                  }
+                }}
+              />
+            </label>
+            <button 
+              type="button" 
+              className="action-btn select-files-btn"
+              onClick={() => setShowTextModal(true)}
+              title="Add or paste text notes"
+            >
+              <MessageSquare size={16} />
+              Add / Paste Text
+            </button>
             {peers.length > 0 && queue.length > 0 && (
               <button 
                 type="button" 
@@ -891,7 +917,7 @@ function App() {
                 onClick={handleOpenRecipientModal}
               >
                 <Send size={16} />
-                Send Queue to All Peers ({queue.length})
+                Send Queue ({queue.length})
               </button>
             )}
           </div>
@@ -923,74 +949,7 @@ function App() {
         {/* Left Column: Uploads, Sending Queue, and Received Files */}
         <div className="dashboard-left-col">
           
-          {/* Upload & Paste Controls Area */}
-          <div className="glass-panel upload-dashboard">
-            <div className="dashboard-header">
-              <div>
-                <h3>Prepare Files & Text</h3>
-                <p className="subtitle">Select file(s) or paste text notes to build your transfer queue</p>
-              </div>
-              <div className="dashboard-actions">
-                <label className="action-btn select-files-btn">
-                  <Upload size={18} />
-                  Select File(s)
-                  <input 
-                    type="file" 
-                    multiple
-                    className="file-input" 
-                    onChange={(e) => {
-                      if (e.target.files && e.target.files.length > 0) {
-                        const files = Array.from(e.target.files);
-                        addFilesToQueue(files);
-                        e.target.value = ''; // reset so same files can be re-selected if desired
-                      }
-                    }}
-                  />
-                </label>
-              </div>
-            </div>
 
-            {/* Paste Text Section */}
-            <div className="paste-text-card">
-              <div className="paste-text-header">
-                <span className="paste-label">
-                  <MessageSquare size={16} /> Paste or Type Text
-                </span>
-                <button 
-                  type="button" 
-                  className="paste-clipboard-btn"
-                  onClick={handlePasteFromClipboard}
-                  title="Read clipboard text directly"
-                >
-                  <Clipboard size={14} /> Paste from Clipboard
-                </button>
-              </div>
-              <textarea
-                ref={textareaRef}
-                className="paste-textarea"
-                placeholder="Type or paste copied text, links, or notes here... Click 'Add to Queue' or press Ctrl+Enter to add."
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                    e.preventDefault();
-                    handleAddTextInput();
-                  }
-                }}
-                rows={3}
-              />
-              <div className="paste-btn-row">
-                <span className="keyboard-hint">Press Ctrl+Enter or click to add</span>
-                <button 
-                  type="button" 
-                  className="action-btn small-btn add-text-btn"
-                  onClick={handleAddTextInput}
-                >
-                  <Plus size={15} /> Add Text to Queue
-                </button>
-              </div>
-            </div>
-          </div>
 
           {/* Sending Queue Area - ALWAYS VISIBLE with Drag & Drop */}
           <div 
@@ -1552,6 +1511,79 @@ function App() {
                 onClick={() => startSendingQueue(selectedPeerIds)}
               >
                 <Send size={16} /> Send to {selectedPeerIds.length} Recipient{selectedPeerIds.length === 1 ? '' : 's'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add / Paste Text Modal Dialog */}
+      {showTextModal && (
+        <div className="modal-backdrop" onClick={() => setShowTextModal(false)}>
+          <div className="modal-content glass-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title-wrap">
+                <MessageSquare size={20} color="var(--accent-color)" />
+                <h3>Add / Paste Text Note</h3>
+              </div>
+              <button 
+                type="button" 
+                className="modal-close-btn"
+                onClick={() => setShowTextModal(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div style={{ margin: '1rem 0' }}>
+              <div className="paste-text-header" style={{ marginBottom: '0.65rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span className="paste-label" style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                  <MessageSquare size={16} /> Type or Paste Text
+                </span>
+                <button 
+                  type="button" 
+                  className="paste-clipboard-btn"
+                  onClick={handlePasteFromClipboard}
+                  title="Read clipboard text directly"
+                >
+                  <Clipboard size={14} /> Paste from Clipboard
+                </button>
+              </div>
+              <textarea
+                ref={textareaRef}
+                className="paste-textarea"
+                placeholder="Type or paste text, links, or notes here... Press Ctrl+Enter to add to queue."
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    await handleAddTextInput();
+                    setShowTextModal(false);
+                  }
+                }}
+                rows={5}
+                autoFocus
+              />
+            </div>
+            
+            <div className="modal-footer" style={{ marginTop: '0', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button 
+                type="button" 
+                className="room-btn secondary"
+                onClick={() => setShowTextModal(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                className="action-btn send-btn"
+                onClick={async () => {
+                  await handleAddTextInput();
+                  setShowTextModal(false);
+                }}
+              >
+                <Plus size={16} /> Add to Queue
               </button>
             </div>
           </div>
