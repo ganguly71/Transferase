@@ -316,11 +316,15 @@ function App() {
   // Add multiple files to queue with duplicate auto-renaming "(2)", "(3)"
   const addFilesToQueue = (fileList) => {
     if (!fileList || fileList.length === 0) return;
+    // CRITICAL: Clone the fileList synchronously into an array immediately
+    // so any e.target.value = '' does not empty the files list in memory!
+    const filesArray = Array.from(fileList);
+    if (filesArray.length === 0) return;
 
     setQueue(prevQueue => {
       const currentNames = prevQueue.map(item => item.name);
 
-      const newItems = Array.from(fileList).map(file => {
+      const newItems = filesArray.map(file => {
         const uniqueName = resolveDuplicateName(file.name, currentNames);
         currentNames.push(uniqueName);
 
@@ -936,7 +940,8 @@ function App() {
                     className="file-input" 
                     onChange={(e) => {
                       if (e.target.files && e.target.files.length > 0) {
-                        addFilesToQueue(e.target.files);
+                        const files = Array.from(e.target.files);
+                        addFilesToQueue(files);
                         e.target.value = ''; // reset so same files can be re-selected if desired
                       }
                     }}
@@ -1014,7 +1019,8 @@ function App() {
               className="file-input"
               onChange={(e) => {
                 if (e.target.files && e.target.files.length > 0) {
-                  addFilesToQueue(e.target.files);
+                  const files = Array.from(e.target.files);
+                  addFilesToQueue(files);
                   e.target.value = '';
                 }
               }}
