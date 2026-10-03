@@ -1142,28 +1142,95 @@ function App() {
 
       {/* Active Transfer Progress (if any) */}
       {transferProgress && (
-        <div className={`progress-banner ${transferProgress.isDownload ? 'is-download' : 'is-upload'}`}>
-          <div className="progress-header">
-            <span className="file-transferring-name">
+        <div 
+          className={`progress-banner ${transferProgress.isDownload ? 'is-download' : 'is-upload'}`}
+          style={{
+            background: '#110904',
+            color: '#FFFFFF',
+            border: '2px solid #C49267',
+            borderLeft: transferProgress.isDownload ? '6px solid #10B981' : '6px solid #F59E0B',
+            boxShadow: '0 10px 28px rgba(0, 0, 0, 0.75), inset 0 0 0 1px rgba(255, 255, 255, 0.12)',
+            padding: '1.25rem 1.5rem',
+            marginBottom: '0.85rem'
+          }}
+        >
+          <div className="progress-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className="file-transferring-name" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: '#FFFFFF', fontWeight: 700 }}>
               {transferProgress.isDownload ? (
-                <Download size={18} className="spin-slow transfer-icon" />
+                <Download size={20} className="spin-slow transfer-icon" style={{ color: '#34D399', flexShrink: 0 }} />
               ) : (
-                <Upload size={18} className="spin-slow transfer-icon" />
+                <Upload size={20} className="spin-slow transfer-icon" style={{ color: '#FBBF24', flexShrink: 0 }} />
               )}
-              <span className="transfer-type-tag">
+              <span 
+                className="transfer-type-tag"
+                style={{
+                  background: transferProgress.isDownload ? 'rgba(16, 185, 129, 0.25)' : 'rgba(245, 158, 11, 0.25)',
+                  color: transferProgress.isDownload ? '#6EE7B7' : '#FDE68A',
+                  border: transferProgress.isDownload ? '1px solid #10B981' : '1px solid #F59E0B',
+                  padding: '0.2rem 0.55rem',
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                  letterSpacing: '0.08em'
+                }}
+              >
                 {transferProgress.isDownload ? 'DOWNLOADING' : 'SENDING'}
               </span>
-              <span className="file-name-text">{transferProgress.fileName}</span>
+              <span className="file-name-text" style={{ color: '#FFFFFF', fontWeight: 700, fontSize: '1.05rem' }}>
+                {transferProgress.fileName}
+              </span>
             </span>
-            <span className="transfer-percentage">{transferProgress.percent}%</span>
+            <span 
+              className="transfer-percentage"
+              style={{
+                fontFamily: "'Rajdhani', monospace, sans-serif",
+                fontSize: '1.4rem',
+                fontWeight: 800,
+                color: transferProgress.isDownload ? '#34D399' : '#FDE68A',
+                textShadow: transferProgress.isDownload ? '0 0 12px rgba(52, 211, 153, 0.7)' : '0 0 12px rgba(253, 230, 138, 0.7)'
+              }}
+            >
+              {transferProgress.percent}%
+            </span>
           </div>
-          <div className="progress-bar-track">
+          <div 
+            className="progress-bar-track"
+            style={{
+              width: '100%',
+              height: '14px',
+              background: '#000000',
+              border: '1.5px solid rgba(255, 255, 255, 0.35)',
+              boxShadow: 'inset 0 2px 5px rgba(0, 0, 0, 0.8)',
+              overflow: 'hidden',
+              margin: '0.5rem 0'
+            }}
+          >
             <div 
               className="progress-bar-fill" 
-              style={{ width: `${transferProgress.percent}%` }}
+              style={{ 
+                width: `${transferProgress.percent}%`,
+                height: '100%',
+                background: transferProgress.isDownload 
+                  ? 'linear-gradient(90deg, #10B981 0%, #34D399 35%, #6EE7B7 70%, #FFFFFF 100%)' 
+                  : 'linear-gradient(90deg, #D97706 0%, #F59E0B 35%, #FBBF24 70%, #FFFFFF 100%)',
+                boxShadow: transferProgress.isDownload 
+                  ? '0 0 16px rgba(52, 211, 153, 0.95), 0 0 6px #FFFFFF' 
+                  : '0 0 16px rgba(251, 191, 36, 0.95), 0 0 6px #FFFFFF',
+                transition: 'width 0.15s ease-out'
+              }}
             ></div>
           </div>
-          <span className="progress-status-text">{transferProgress.status}</span>
+          <span 
+            className="progress-status-text"
+            style={{
+              color: '#FFFFFF',
+              fontSize: '0.92rem',
+              fontWeight: 600,
+              opacity: 0.95,
+              display: 'block'
+            }}
+          >
+            {transferProgress.status}
+          </span>
         </div>
       )}
 

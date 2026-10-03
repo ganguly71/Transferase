@@ -449,127 +449,128 @@
 
 /* Progress Bar */
 .progress-banner {
-  padding: 1.15rem 1.4rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-  background: rgba(35, 21, 12, 0.96);
-  border: 2px solid var(--accent-color);
-  border-left: 5px solid #34D399;
-  box-shadow: 4px 4px 0px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
-  margin-bottom: 0.5rem;
-  transition: all 0.2s ease;
+  padding: 1.25rem 1.5rem !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.75rem !important;
+  background: #110904 !important;
+  border: 2px solid #C49267 !important;
+  border-left: 6px solid #10B981 !important;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.75), inset 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+  margin-bottom: 0.85rem !important;
+  transition: all 0.2s ease !important;
 }
 
 .progress-banner.is-download {
-  border-left: 5px solid #34D399;
+  border-left: 6px solid #10B981 !important;
 }
 
 .progress-banner.is-upload {
-  border-left: 5px solid #F59E0B;
+  border-left: 6px solid #F59E0B !important;
 }
 
 .progress-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.95rem;
-  font-weight: 600;
-  gap: 0.75rem;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  gap: 0.75rem !important;
 }
 
 .file-transferring-name {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  color: #FFFFFF;
-  font-weight: 600;
-  min-width: 0;
-  overflow: hidden;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.75rem !important;
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
 }
 
 .file-name-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  color: #FFF9F2;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+  font-size: 1.05rem !important;
+  letter-spacing: 0.02em !important;
 }
 
 .transfer-type-tag {
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  padding: 0.15rem 0.5rem;
-  border-radius: 0;
-  text-transform: uppercase;
-  flex-shrink: 0;
+  font-size: 0.72rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
+  padding: 0.2rem 0.55rem !important;
+  border-radius: 0 !important;
+  text-transform: uppercase !important;
+  flex-shrink: 0 !important;
 }
 
 .progress-banner.is-download .transfer-type-tag {
-  background: rgba(52, 211, 153, 0.18);
-  color: #6EE7B7;
-  border: 1px solid rgba(52, 211, 153, 0.5);
+  background: rgba(16, 185, 129, 0.25) !important;
+  color: #6EE7B7 !important;
+  border: 1px solid #10B981 !important;
 }
 
 .progress-banner.is-upload .transfer-type-tag {
-  background: rgba(245, 158, 11, 0.18);
-  color: #FDE68A;
-  border: 1px solid rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.25) !important;
+  color: #FDE68A !important;
+  border: 1px solid #F59E0B !important;
 }
 
 .progress-banner.is-download .transfer-icon {
-  color: #34D399;
+  color: #34D399 !important;
 }
 
 .progress-banner.is-upload .transfer-icon {
-  color: #FBBF24;
+  color: #FBBF24 !important;
 }
 
 .transfer-percentage {
-  font-family: 'Rajdhani', monospace, sans-serif;
-  font-size: 1.25rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  color: #6EE7B7;
-  text-shadow: 0 0 10px rgba(110, 231, 183, 0.4);
-  flex-shrink: 0;
+  font-family: 'Rajdhani', monospace, sans-serif !important;
+  font-size: 1.4rem !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.05em !important;
+  color: #6EE7B7 !important;
+  text-shadow: 0 0 12px rgba(110, 231, 183, 0.6) !important;
+  flex-shrink: 0 !important;
 }
 
 .progress-banner.is-upload .transfer-percentage {
-  color: #FDE68A;
-  text-shadow: 0 0 10px rgba(253, 230, 138, 0.4);
+  color: #FDE68A !important;
+  text-shadow: 0 0 12px rgba(253, 230, 138, 0.6) !important;
 }
 
 .progress-bar-track {
-  width: 100%;
-  height: 11px;
-  background: rgba(0, 0, 0, 0.55);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 0;
-  overflow: hidden;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+  width: 100% !important;
+  height: 14px !important;
+  background: #000000 !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.35) !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.8) !important;
 }
 
 .progress-bar-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #059669 0%, #10B981 35%, #34D399 70%, #A7F3D0 100%);
-  box-shadow: 0 0 12px rgba(52, 211, 153, 0.8), 0 0 4px #FFFFFF;
-  transition: width 0.15s ease-out;
-  position: relative;
-  background-size: 24px 24px;
+  height: 100% !important;
+  background: linear-gradient(90deg, #10B981 0%, #34D399 35%, #6EE7B7 70%, #FFFFFF 100%) !important;
+  box-shadow: 0 0 16px rgba(52, 211, 153, 0.95), 0 0 6px #FFFFFF !important;
+  transition: width 0.15s ease-out !important;
+  position: relative !important;
+  background-size: 24px 24px !important;
   background-image: linear-gradient(
     45deg,
-    rgba(255, 255, 255, 0.22) 25%,
+    rgba(255, 255, 255, 0.3) 25%,
     transparent 25%,
     transparent 50%,
-    rgba(255, 255, 255, 0.22) 50%,
-    rgba(255, 255, 255, 0.22) 75%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(255, 255, 255, 0.3) 75%,
     transparent 75%,
     transparent
-  );
-  animation: progressShimmer 1.2s linear infinite;
+  ) !important;
+  animation: progressShimmer 1s linear infinite !important;
 }
 
 @keyframes progressShimmer {
@@ -578,15 +579,16 @@
 }
 
 .progress-banner.is-upload .progress-bar-fill {
-  background: linear-gradient(90deg, #D97706 0%, #F59E0B 35%, #FBBF24 70%, #FEF08A 100%);
-  box-shadow: 0 0 12px rgba(251, 191, 36, 0.8), 0 0 4px #FFFFFF;
+  background: linear-gradient(90deg, #D97706 0%, #F59E0B 35%, #FBBF24 70%, #FFFFFF 100%) !important;
+  box-shadow: 0 0 16px rgba(251, 191, 36, 0.95), 0 0 6px #FFFFFF !important;
 }
 
 .progress-status-text {
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: #F5EAE0;
-  letter-spacing: 0.02em;
+  font-size: 0.92rem !important;
+  font-weight: 600 !important;
+  color: #FFFFFF !important;
+  opacity: 0.95 !important;
+  letter-spacing: 0.02em !important;
 }
 
 /* Your Device Card - Placed just below network bar */
