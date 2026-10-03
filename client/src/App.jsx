@@ -29,7 +29,10 @@ import {
   Layers,
   HardDrive,
   Pencil,
-  Archive
+  Archive,
+  LogOut,
+  XCircle,
+  Crown
 } from 'lucide-react';
 import './App.css';
 
@@ -46,6 +49,15 @@ const getDeviceType = () => {
   if (/(tablet|ipad|playbook|silk)|(android(?!.*mobi))/i.test(ua)) return 'tablet';
   if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|Silk-Accelerated|(hpw|web)OS|Opera M(obi|ini)/i.test(ua)) return 'mobile';
   return 'desktop';
+};
+
+const getStoredUserId = () => {
+  let uid = localStorage.getItem('transferase_client_id');
+  if (!uid) {
+    uid = 'usr_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+    localStorage.setItem('transferase_client_id', uid);
+  }
+  return uid;
 };
 
 const formatBytes = (bytes) => {
@@ -108,8 +120,10 @@ function App() {
   const [connected, setConnected] = useState(false);
   const [me, setMe] = useState('');
   const [myName, setMyName] = useState('');
-  const [networkInfo, setNetworkInfo] = useState({ room: '', isCustom: false, ip: '' });
+  const [networkInfo, setNetworkInfo] = useState({ room: '', isCustom: false, roomCode: '', ip: '' });
   const [roomCodeInput, setRoomCodeInput] = useState('');
+  const [isHost, setIsHost] = useState(false);
+  const [roomHostName, setRoomHostName] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState('');
   const [peers, setPeers] = useState([]);
@@ -148,9 +162,17 @@ function App() {
   };
 
   useEffect(() => {
+    const savedRoom = localStorage.getItem('transferase_room_code') || '';
+    const savedName = localStorage.getItem('transferase_device_name') || '';
+
     const newSocket = io(SERVER_URL, { 
       maxHttpBufferSize: 1e8, // allow up to 100MB socket packets
-      query: { deviceType: getDeviceType() }
+      query: { 
+        deviceType: getDeviceType(),
+        userId: getStoredUserId(),
+        roomCode: savedRoom,
+        savedName: savedName
+      }
     });
     setSocket(newSocket);
 
@@ -168,20 +190,59 @@ function App() {
     newSocket.on('init-profile', (data) => {
       setMe(data.id);
       setMyName(data.name);
+      localStorage.setItem('transferase_device_name', data.name);
       setNetworkInfo({
         room: data.currentRoom,
         isCustom: data.isCustomRoom,
+        roomCode: data.roomCode,
         ip: data.networkIp
       });
+      setIsHost(!!data.isHost);
+      setRoomHostName(data.hostName || '');
+      if (data.isCustomRoom && data.roomCode && data.roomCode !== 'Local Network') {
+        localStorage.setItem('transferase_room_code', data.roomCode);
+      }
     });
 
     newSocket.on('room-changed', (data) => {
       setNetworkInfo(prev => ({
         ...prev,
         room: data.currentRoom,
-        isCustom: data.isCustomRoom
+        isCustom: data.isCustomRoom,
+        roomCode: data.roomCode
       }));
-      showToast(`Switched to room: ${data.roomCode}`, 'success');
+      setIsHost(!!data.isHost);
+      setRoomHostName(data.hostName || '');
+      if (data.isCustomRoom && data.roomCode && data.roomCode !== 'Local Network') {
+        localStorage.setItem('transferase_room_code', data.roomCode);
+        showToast(`Connected to room: ${data.roomCode}${data.isHost ? ' (You are Host)' : ''}`, 'success');
+      } else {
+        localStorage.removeItem('transferase_room_code');
+        showToast(`Switched to: ${data.roomCode}`, 'info');
+      }
+    });
+
+    newSocket.on('host-changed', (data) => {
+      setRoomHostName(data.newHostName);
+      if (data.newHostId === newSocket.id || data.newHostUserId === getStoredUserId()) {
+        setIsHost(true);
+        showToast('Room host left. You now have host and room-closing privileges!', 'success');
+      } else {
+        setIsHost(false);
+        showToast(`${data.newHostName} is now the room host.`, 'info');
+      }
+    });
+
+    newSocket.on('room-closed', (data) => {
+      localStorage.removeItem('transferase_room_code');
+      setIsHost(false);
+      setRoomHostName('');
+      showToast(data.reason || 'The room was closed by the host.', 'info');
+    });
+
+    newSocket.on('room-info', (data) => {
+      if (data.hostName) setRoomHostName(data.hostName);
+      if (data.hostUserId) setIsHost(data.hostUserId === getStoredUserId());
     });
 
     newSocket.on('peers-list', (existingPeers) => {
@@ -793,6 +854,7 @@ function App() {
     socket.emit('rename-device', editNameValue.trim(), (response) => {
       if (response.success) {
         setMyName(response.name);
+        localStorage.setItem('transferase_device_name', response.name);
         setIsEditingName(false);
         showToast(`Renamed to ${response.name}`, 'success');
       } else {
@@ -804,6 +866,7 @@ function App() {
   const handleCreateRoom = () => {
     if (!socket) return;
     const code = Math.floor(100000 + Math.random() * 900000).toString();
+    localStorage.setItem('transferase_room_code', code);
     socket.emit('join-room', { roomCode: code }, (res) => {
       if (res.success) {
         showToast(`Created secure room: ${code}`, 'success');
@@ -814,20 +877,36 @@ function App() {
   const handleJoinCustomRoom = (e) => {
     e.preventDefault();
     if (!socket) return;
-    socket.emit('join-room', { roomCode: roomCodeInput }, (res) => {
+    const clean = roomCodeInput.trim().toLowerCase();
+    if (!clean) return;
+    localStorage.setItem('transferase_room_code', clean);
+    socket.emit('join-room', { roomCode: clean }, (res) => {
       if (res.success) {
         setRoomCodeInput('');
       }
     });
   };
 
-  const handleResetToLocalNetwork = () => {
+  const handleLeaveRoom = () => {
     if (!socket) return;
-    socket.emit('join-room', { roomCode: '' }, (res) => {
-      if (res.success) {
-        showToast('Returned to auto-detected local network', 'info');
-      }
+    localStorage.removeItem('transferase_room_code');
+    socket.emit('leave-room', () => {
+      showToast('Left room and returned to local network', 'info');
     });
+  };
+
+  const handleCloseRoom = () => {
+    if (!socket || !isHost) return;
+    if (window.confirm('Are you sure you want to close this room? All participants will be returned to their local network.')) {
+      localStorage.removeItem('transferase_room_code');
+      socket.emit('close-room', (res) => {
+        if (res && res.success) {
+          showToast('Room closed successfully', 'info');
+        } else if (res && res.error) {
+          showToast(res.error, 'error');
+        }
+      });
+    }
   };
 
   const handleCopyText = (text, id) => {
@@ -911,46 +990,72 @@ function App() {
               {networkInfo.isCustom ? <Key size={16} /> : <Wifi size={16} />}
               <span>
                 {networkInfo.isCustom 
-                  ? `Custom Room: ${networkInfo.room.replace('custom_', '')}` 
+                  ? `Custom Room: ${networkInfo.roomCode || networkInfo.room.replace('custom_', '')}` 
                   : 'Auto-Matched Local Wi-Fi'}
               </span>
+              {networkInfo.isCustom && (
+                isHost ? (
+                  <span className="room-role-badge host-badge" title="You created this room and have room-closing privileges">
+                    <Crown size={12} /> Host (You)
+                  </span>
+                ) : (
+                  roomHostName && (
+                    <span className="room-role-badge guest-badge" title={`Room host: ${roomHostName}`}>
+                      Host: {roomHostName}
+                    </span>
+                  )
+                )
+              )}
             </div>
             <span className="network-detail">
               {networkInfo.isCustom 
-                ? 'Devices with the same room code can exchange files directly.' 
+                ? 'Devices with the same room code exchange files directly. Your room is preserved on refresh.' 
                 : 'Devices on your same Wi-Fi router appear automatically.'}
             </span>
           </div>
 
           <div className="room-controls-wrapper">
-            {!networkInfo.isCustom && (
-              <button type="button" onClick={handleCreateRoom} className="room-btn create-btn">
-                <Key size={14} /> Create Room
-              </button>
-            )}
-            <form onSubmit={handleJoinCustomRoom} className="room-form">
-              <input
-                type="text"
-                placeholder="6-digit code"
-                value={roomCodeInput}
-                onChange={(e) => setRoomCodeInput(e.target.value)}
-                className="room-input"
-                maxLength={6}
-              />
-              <button type="submit" className="room-btn join-btn">
-                Join <ArrowRight size={14} />
-              </button>
-              {networkInfo.isCustom && (
+            {!networkInfo.isCustom ? (
+              <>
+                <button type="button" onClick={handleCreateRoom} className="room-btn create-btn">
+                  <Key size={14} /> Create Room
+                </button>
+                <form onSubmit={handleJoinCustomRoom} className="room-form">
+                  <input
+                    type="text"
+                    placeholder="6-digit code"
+                    value={roomCodeInput}
+                    onChange={(e) => setRoomCodeInput(e.target.value)}
+                    className="room-input"
+                    maxLength={6}
+                  />
+                  <button type="submit" className="room-btn join-btn">
+                    Join <ArrowRight size={14} />
+                  </button>
+                </form>
+              </>
+            ) : (
+              <div className="room-active-actions">
                 <button 
                   type="button" 
-                  onClick={handleResetToLocalNetwork} 
-                  className="room-btn secondary"
-                  title="Return to auto-detected local network"
+                  onClick={handleLeaveRoom} 
+                  className="room-btn leave-btn"
+                  title="Leave this room and return to auto-detected local network"
                 >
-                  Reset to Wi-Fi
+                  <LogOut size={14} /> Leave Room
                 </button>
-              )}
-            </form>
+                {isHost && (
+                  <button 
+                    type="button" 
+                    onClick={handleCloseRoom} 
+                    className="room-btn close-room-btn"
+                    title="Close this room for all participants"
+                  >
+                    <XCircle size={14} /> Close Room
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

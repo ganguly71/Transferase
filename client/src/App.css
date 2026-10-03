@@ -348,6 +348,67 @@
   background: rgba(58, 38, 24, 0.15);
 }
 
+.room-active-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.room-btn.leave-btn {
+  background: rgba(58, 38, 24, 0.15);
+  border: 1px solid var(--card-border);
+  color: var(--text-primary);
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.room-btn.leave-btn:hover {
+  background: rgba(58, 38, 24, 0.3);
+  color: #FFFFFF;
+  transform: translateY(-1px);
+}
+
+.room-btn.close-room-btn {
+  background: #8E2818;
+  border: 1px solid #701C0F;
+  color: #FFFFFF;
+  font-weight: 600;
+  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+}
+
+.room-btn.close-room-btn:hover {
+  background: #A8321F;
+  transform: translateY(-1px);
+  box-shadow: 3px 3px 0px rgba(0, 0, 0, 0.3);
+}
+
+.room-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.55rem;
+  text-transform: uppercase;
+  border-radius: 0;
+}
+
+.room-role-badge.host-badge {
+  background: rgba(245, 158, 11, 0.2);
+  color: #D97706;
+  border: 1px solid rgba(245, 158, 11, 0.6);
+}
+
+.room-role-badge.guest-badge {
+  background: rgba(58, 38, 24, 0.08);
+  color: var(--text-secondary);
+  border: 1px solid var(--card-border);
+  font-weight: 600;
+}
+
 /* Toast Notifications */
 .toast-notification {
   position: fixed;
