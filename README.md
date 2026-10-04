@@ -9,8 +9,6 @@ Transferase is the ultimate, all-in-one file transfer solution designed for ligh
 - 📱 **Android Native App (100% Offline Mode)**: Your phone acts as the host and web server. Transfer files between your PC and phone with **zero internet connection** via Mobile Hotspot.
 - 💻 **Local PC Server**: Run the relay server locally on your computer for private, ultra-fast transfers over your home Wi-Fi.
 - 📋 **Clipboard Sync**: Instantly share text snippets, links, and code blocks between devices.
-- 🎨 **Beautiful UI**: A highly polished, modern, and elegant interface with smooth animations and dynamic layouts.
-
 ---
 
 ## 🌍 The Main Web App: `transferase.onrender.com` (Recommended)
