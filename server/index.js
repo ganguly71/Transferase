@@ -41,6 +41,17 @@ function getIPv6Prefix64(ip) {
   return normalized.slice(0, 4).join(':');
 }
 
+// Helper to normalize an IPv4 address to its /24 network prefix
+// In cellular CGNAT and local network pools, tethered devices and host devices
+// share the same /24 subnet (e.g. 152.56.132.60 and 152.56.132.143)
+function getIPv4Prefix24(ip) {
+  const parts = (ip || '').split('.');
+  if (parts.length === 4) {
+    return `${parts[0]}.${parts[1]}.${parts[2]}`;
+  }
+  return ip;
+}
+
 // Helper to determine client IP address and network group
 function getNetworkRoom(socket) {
   const headers = socket.handshake.headers || {};
@@ -84,10 +95,12 @@ function getNetworkRoom(socket) {
     };
   }
 
-  // If running in cloud on IPv4, group by external public IP so devices on same router match
+  // If running in cloud on IPv4:
+  // Normalize to /24 subnet (first 3 octets) so mobile hotspot tethered devices and home routers match
+  const prefix24 = getIPv4Prefix24(ip);
   return {
     ip,
-    roomName: `network_v4_${ip.replace(/[^a-zA-Z0-9]/g, '_')}`,
+    roomName: `network_v4_${prefix24.replace(/[^a-zA-Z0-9]/g, '_')}`,
     isLocalMode: false
   };
 }
