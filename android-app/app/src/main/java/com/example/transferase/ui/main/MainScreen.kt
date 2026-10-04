@@ -755,15 +755,20 @@ fun MainScreen(
                         )
 
                         if (receivedFiles.isNotEmpty()) {
-                            TextButton(
-                                onClick = { SharedFileManager.clearReceivedFiles(context) }
-                            ) {
-                                Text(
-                                    "CLEAR ALL",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = ErrorRed
-                                )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(
+                                    onClick = { 
+                                        val count = SharedFileManager.saveAllToPublicDownloads(context)
+                                        Toast.makeText(context, "Saved $count files to Downloads", Toast.LENGTH_SHORT).show()
+                                    }
+                                ) {
+                                    Text("DOWNLOAD ALL", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AccentCyan)
+                                }
+                                TextButton(
+                                    onClick = { SharedFileManager.clearReceivedFiles(context) }
+                                ) {
+                                    Text("CLEAR ALL", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = ErrorRed)
+                                }
                             }
                         }
                     }
@@ -823,6 +828,16 @@ fun MainScreen(
                                     },
                                     onOpenFile = { file ->
                                         openFile(context, file)
+                                    },
+                                    onDownloadFile = { item ->
+                                        if (SharedFileManager.saveToPublicDownloads(context, item)) {
+                                            Toast.makeText(context, "Saved to Downloads", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(context, "Failed to save file", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    onClearFile = { item ->
+                                        SharedFileManager.removeReceivedFile(context, item.path)
                                     }
                                 )
                             }
@@ -1292,7 +1307,9 @@ fun SharedQueueItemCard(
 fun ReceivedFileItemCard(
     item: ReceivedFileItem,
     onCopyToClipboard: (String) -> Unit,
-    onOpenFile: (File) -> Unit
+    onOpenFile: (File) -> Unit,
+    onDownloadFile: (ReceivedFileItem) -> Unit,
+    onClearFile: (ReceivedFileItem) -> Unit
 ) {
     val isText = item.textContent != null || item.name.endsWith(".txt", ignoreCase = true) || item.name.startsWith("note_", ignoreCase = true)
 
@@ -1338,28 +1355,23 @@ fun ReceivedFileItemCard(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isText && item.textContent != null) {
-                        Button(
-                            onClick = { onCopyToClipboard(item.textContent) },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldOnline, contentColor = Color.White),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(12.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Copy", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        IconButton(onClick = { onCopyToClipboard(item.textContent) }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = AccentCyan, modifier = Modifier.size(16.dp))
                         }
-                        Spacer(modifier = Modifier.width(6.dp))
                     }
 
-                    Button(
-                        onClick = { onOpenFile(File(item.path)) },
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = Color.White),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    if (!isText) {
+                        IconButton(onClick = { onDownloadFile(item) }, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Download, contentDescription = "Download", tint = EmeraldOnline, modifier = Modifier.size(18.dp))
+                        }
+                    }
+
+                    IconButton(onClick = { onOpenFile(File(item.path)) }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = "Open", tint = AccentBlue, modifier = Modifier.size(18.dp))
+                    }
+
+                    IconButton(onClick = { onClearFile(item) }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Clear", tint = TextMuted, modifier = Modifier.size(18.dp))
                     }
                 }
             }

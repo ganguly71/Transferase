@@ -1567,16 +1567,7 @@ function App() {
   const handleOpenQrModal = () => {
     let activeCode = networkInfo.roomCode && networkInfo.roomCode !== 'Local Network' && networkInfo.roomCode !== 'Phone Server'
       ? networkInfo.roomCode
-      : (networkInfo.room ? networkInfo.room.replace(/[^a-zA-Z0-9]/g, '').slice(-6) : '');
-
-    if (!activeCode) {
-      activeCode = Math.floor(100000 + Math.random() * 900000).toString();
-    }
-
-    if (!networkInfo.isCustom && socket) {
-      sessionStorage.setItem('transferase_room_code', activeCode);
-      socket.emit('join-room', { roomCode: activeCode, isCreator: true });
-    }
+      : (networkInfo.room ? networkInfo.room : 'auto');
 
     const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(activeCode)}`;
     QRCode.toDataURL(inviteUrl, {

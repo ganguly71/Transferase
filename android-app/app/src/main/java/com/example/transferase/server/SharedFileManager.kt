@@ -39,12 +39,44 @@ object SharedFileManager {
     val lastMessage = _lastMessage.asStateFlow()
 
     fun getDownloadDir(context: Context): File {
-        val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        val transferaseDir = File(downloadDir, "Transferase")
+        val transferaseDir = File(context.cacheDir, "TransferaseReceived")
         if (!transferaseDir.exists()) {
             transferaseDir.mkdirs()
         }
-        return if (transferaseDir.canWrite()) transferaseDir else context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+        return transferaseDir
+    }
+
+    fun saveToPublicDownloads(context: Context, receivedFile: ReceivedFileItem): Boolean {
+        return try {
+            val sourceFile = File(receivedFile.path)
+            if (!sourceFile.exists()) return false
+            
+            val publicDownloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val transferaseDir = File(publicDownloadDir, "Transferase")
+            if (!transferaseDir.exists()) transferaseDir.mkdirs()
+            
+            val destFile = File(transferaseDir, receivedFile.name)
+            sourceFile.copyTo(destFile, overwrite = true)
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
+        }
+    }
+    
+    fun saveAllToPublicDownloads(context: Context): Int {
+        var count = 0
+        _receivedFiles.value.forEach { item ->
+            if (saveToPublicDownloads(context, item)) count++
+        }
+        return count
+    }
+
+    fun removeReceivedFile(context: Context, path: String) {
+        try {
+            File(path).delete()
+        } catch (e: Exception) {}
+        refreshReceivedFiles(context)
     }
 
     fun addSharedFile(context: Context, uri: Uri) {
