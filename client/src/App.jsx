@@ -177,12 +177,65 @@ function App() {
   const textareaRef = useRef(null);
   const queueFileInputRef = useRef(null);
 
+  const [phoneServerData, setPhoneServerData] = useState(null);
+  const [phoneSharedFiles, setPhoneSharedFiles] = useState([]);
+
   const showToast = (message, type = 'info') => {
     setNotification({ message, type });
     setTimeout(() => {
       setNotification(null);
     }, 4500);
   };
+
+  // Detect if running connected directly to the Android Phone Server
+  useEffect(() => {
+    fetch('/api/status')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.app === 'Transferase Mobile') {
+          console.log('[Transferase Mobile] Connected directly to Android Phone Server');
+          setPhoneServerData(data);
+          setConnected(true);
+          setMe('local_pc_client');
+          setMyName(prev => prev || sessionStorage.getItem('transferase_device_name') || 'Local PC');
+          setNetworkInfo({
+            room: 'Phone Hotspot / Local Network',
+            isCustom: false,
+            roomCode: 'Phone Server',
+            ip: window.location.hostname
+          });
+
+          const fetchFiles = () => {
+            fetch('/api/files')
+              .then(r => r.json())
+              .then(files => {
+                if (Array.isArray(files)) setPhoneSharedFiles(files);
+              })
+              .catch(() => {});
+          };
+          fetchFiles();
+
+          try {
+            const es = new EventSource('/api/events');
+            es.addEventListener('file_received', () => {
+              showToast('File received by Phone!', 'success');
+            });
+            es.addEventListener('file_shared', () => {
+              fetchFiles();
+            });
+            es.addEventListener('new_message', (e) => {
+              try {
+                const parsed = JSON.parse(e.data);
+                showToast(`Message from phone: ${parsed.message}`, 'info');
+              } catch (ignored) {}
+            });
+          } catch (e) {
+            console.log('SSE not available', e);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -966,6 +1019,46 @@ function App() {
     setShowRecipientModal(true);
   };
 
+  // Fast direct upload to Android Phone Server
+  const uploadDirectlyToPhone = async () => {
+    if (queue.length === 0) {
+      showToast('Queue is empty. Select files first.', 'error');
+      return;
+    }
+    setIsSendingQueue(true);
+    for (let i = 0; i < queue.length; i++) {
+      const item = queue[i];
+      setTransferProgress({
+        fileName: `(${i + 1}/${queue.length}) ${item.name}`,
+        percent: 30,
+        status: `Uploading directly to phone...`,
+        isDownload: false
+      });
+      try {
+        const bodyContent = item.isText ? new Blob([item.textContent || ''], { type: 'text/plain' }) : item.file;
+        await fetch('/api/upload', {
+          method: 'POST',
+          headers: {
+            'X-File-Name': encodeURIComponent(item.name)
+          },
+          body: bodyContent
+        });
+        setTransferProgress({
+          fileName: `(${i + 1}/${queue.length}) ${item.name}`,
+          percent: 100,
+          status: `Uploaded!`,
+          isDownload: false
+        });
+      } catch (e) {
+        showToast(`Failed to upload ${item.name}: ${e.message}`, 'error');
+      }
+    }
+    setTransferProgress(null);
+    setIsSendingQueue(false);
+    clearQueue();
+    showToast('Files successfully uploaded to Phone Downloads/Transferase!', 'success');
+  };
+
   // Direct send from a peer card
   const handleSendQueueToSpecificPeer = (peerId) => {
     if (queue.length === 0) {
@@ -1541,6 +1634,41 @@ function App() {
           
 
 
+          {/* Files Shared by Android Phone */}
+          {phoneServerData && phoneSharedFiles.length > 0 && (
+            <div className="glass-panel" style={{ marginBottom: '1.25rem', padding: '1.2rem', border: '1px solid rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.05)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#10b981' }}>
+                  <Smartphone size={18} /> Files Available from Phone ({phoneSharedFiles.length})
+                </h3>
+                <button 
+                  onClick={() => fetch('/api/files').then(r => r.json()).then(files => Array.isArray(files) && setPhoneSharedFiles(files))}
+                  className="action-btn small-btn secondary"
+                >
+                  Refresh
+                </button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {phoneSharedFiles.map(f => (
+                  <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0.9rem', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>{f.name}</div>
+                      <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>{formatBytes(f.size)}</div>
+                    </div>
+                    <a 
+                      href={`/api/download?id=${f.id}`}
+                      download={f.name}
+                      className="action-btn small-btn"
+                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#10b981', color: '#fff' }}
+                    >
+                      <Download size={14} /> Download
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Sending Queue Area - ALWAYS VISIBLE with Drag & Drop */}
           <div 
             className={`glass-panel queue-panel ${isQueueDragging ? 'drag-active' : ''}`}
@@ -1598,6 +1726,18 @@ function App() {
                   >
                     Clear Queue
                   </button>
+                  {phoneServerData && (
+                    <button 
+                      type="button" 
+                      onClick={uploadDirectlyToPhone} 
+                      disabled={isSendingQueue}
+                      className="action-btn send-queue-btn"
+                      style={{ background: '#10b981', borderColor: '#059669', color: '#fff' }}
+                      title="Upload directly to Phone Downloads"
+                    >
+                      <Zap size={16} /> Send to Phone ({queue.length})
+                    </button>
+                  )}
                   <button 
                     type="button" 
                     onClick={handleOpenRecipientModal} 
