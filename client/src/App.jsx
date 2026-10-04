@@ -317,7 +317,7 @@ function App() {
 
             // Decode text preview if applicable
             let textPreview = '';
-            if (fileTransfer.isText || (fileTransfer.fileType && fileTransfer.fileType.startsWith('text/'))) {
+            if (fileTransfer.isText || (typeof fileTransfer.fileType === 'string' && fileTransfer.fileType.startsWith('text/'))) {
               try {
                 const decoder = new TextDecoder('utf-8');
                 textPreview = fileTransfer.chunks.map(c => decoder.decode(c, { stream: true })).join('');
@@ -1604,7 +1604,7 @@ function App() {
                     )}
 
                     {/* Image preview */}
-                    {file.type && file.type.startsWith('image/') && (
+                    {typeof file.type === 'string' && file.type.startsWith('image/') && (
                       <div className="preview-wrap">
                         <img src={file.data} alt={file.name} className="image-preview" />
                       </div>
