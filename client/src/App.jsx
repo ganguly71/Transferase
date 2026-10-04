@@ -198,12 +198,31 @@ function App() {
           setConnected(true);
           setMe('local_pc_client');
           setMyName(prev => prev || sessionStorage.getItem('transferase_device_name') || 'Local PC');
+
+          // Register Phone as Connected Host Peer so PC sees it immediately
+          const phoneName = data.deviceName ? `${data.deviceName} (Host)` : 'Android Phone (Host Server)';
+          const phonePeer = {
+            id: 'phone_host_server',
+            name: phoneName,
+            deviceType: 'mobile',
+            isPhoneHost: true,
+            status: 'online',
+            ip: window.location.hostname
+          };
+          setPeers([phonePeer]);
+          setSelectedPeerIds(['phone_host_server']);
+
           setNetworkInfo({
             room: 'Phone Hotspot / Local Network',
             isCustom: false,
             roomCode: 'Phone Server',
             ip: window.location.hostname
           });
+
+          // Disconnect socket.io client if direct phone server is active
+          if (socketRef.current) {
+            try { socketRef.current.disconnect(); } catch (ignored) {}
+          }
 
           const fetchFiles = () => {
             fetch('/api/files')
@@ -217,11 +236,17 @@ function App() {
 
           try {
             const es = new EventSource('/api/events');
-            es.addEventListener('file_received', () => {
-              showToast('File received by Phone!', 'success');
+            es.addEventListener('file_received', (e) => {
+              try {
+                const parsed = JSON.parse(e.data);
+                showToast(`⚡ File "${parsed.name}" received by Phone!`, 'success');
+              } catch {
+                showToast('File received by Phone!', 'success');
+              }
             });
             es.addEventListener('file_shared', () => {
               fetchFiles();
+              showToast('Phone updated shared files list', 'info');
             });
             es.addEventListener('new_message', (e) => {
               try {
@@ -554,9 +579,12 @@ function App() {
     });
 
     newSocket.on('peers-list', (existingPeers) => {
-      const filtered = existingPeers.filter(p => p.id !== newSocket.id);
-      setPeers(filtered);
-      filtered.forEach(p => {
+      setPeers(prev => {
+        const phonePeer = prev.find(p => p.isPhoneHost);
+        const filtered = existingPeers.filter(p => p.id !== newSocket.id && p.id !== 'phone_host_server');
+        return phonePeer ? [phonePeer, ...filtered] : filtered;
+      });
+      existingPeers.forEach(p => {
         if (newSocket.id > p.id) {
           setTimeout(() => createPeerConnection(p.id, true), 400);
         }
@@ -575,6 +603,7 @@ function App() {
     });
 
     newSocket.on('peer-left', (peerId) => {
+      if (peerId === 'phone_host_server') return;
       setPeers(prev => prev.filter(p => p.id !== peerId));
       if (peerConnections.current[peerId]) {
         try { peerConnections.current[peerId].close(); } catch (e) {}
@@ -1008,6 +1037,11 @@ function App() {
       showToast('Queue is empty. Select files or paste text first.', 'error');
       return;
     }
+    // If connected directly to Android Phone Server, send directly to phone!
+    if (phoneServerData) {
+      uploadDirectlyToPhone();
+      return;
+    }
     if (peers.length === 0) {
       showToast('No devices connected. Wait for nearby peers or share room code.', 'error');
       return;
@@ -1026,6 +1060,7 @@ function App() {
       return;
     }
     setIsSendingQueue(true);
+    let successCount = 0;
     for (let i = 0; i < queue.length; i++) {
       const item = queue[i];
       setTransferProgress({
@@ -1036,13 +1071,17 @@ function App() {
       });
       try {
         const bodyContent = item.isText ? new Blob([item.textContent || ''], { type: 'text/plain' }) : item.file;
-        await fetch('/api/upload', {
+        const res = await fetch('/api/upload', {
           method: 'POST',
           headers: {
             'X-File-Name': encodeURIComponent(item.name)
           },
           body: bodyContent
         });
+        if (!res.ok) {
+          throw new Error(`Server returned HTTP ${res.status}`);
+        }
+        successCount++;
         setTransferProgress({
           fileName: `(${i + 1}/${queue.length}) ${item.name}`,
           percent: 100,
@@ -1056,7 +1095,9 @@ function App() {
     setTransferProgress(null);
     setIsSendingQueue(false);
     clearQueue();
-    showToast('Files successfully uploaded to Phone Downloads/Transferase!', 'success');
+    if (successCount > 0) {
+      showToast(`⚡ ${successCount} file(s) saved to Phone Downloads/Transferase!`, 'success');
+    }
   };
 
   // Direct send from a peer card
@@ -1065,12 +1106,27 @@ function App() {
       showToast('Queue is empty. Select files or paste text first.', 'error');
       return;
     }
+    if (peerId === 'phone_host_server' || phoneServerData) {
+      uploadDirectlyToPhone();
+      return;
+    }
     startSendingQueue([peerId]);
   };
 
   // Start sending all queued items to selected peers
   const startSendingQueue = async (targetPeerIds) => {
-    if (!socket || targetPeerIds.length === 0 || queue.length === 0) return;
+    if (targetPeerIds.length === 0 || queue.length === 0) return;
+
+    // If phone host is among target recipients or phoneServerData is active
+    if (targetPeerIds.includes('phone_host_server') || phoneServerData) {
+      setShowRecipientModal(false);
+      await uploadDirectlyToPhone();
+      const remainingTargets = targetPeerIds.filter(pid => pid !== 'phone_host_server');
+      if (remainingTargets.length === 0) return;
+      targetPeerIds = remainingTargets;
+    }
+
+    if (!socket) return;
     setShowRecipientModal(false);
     setIsSendingQueue(true);
 
@@ -1367,17 +1423,26 @@ function App() {
       </div>
 
       {/* Unified Network & Your Device Box (Single Card) */}
-      <div className="network-unified-card glass-panel">
+      <div 
+        className="network-unified-card glass-panel"
+        style={phoneServerData ? { border: '1px solid rgba(16, 185, 129, 0.45)', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(255, 255, 255, 0.02))' } : undefined}
+      >
         <div className="network-unified-top">
           <div className="network-info-left">
-            <div className="network-chip">
-              {networkInfo.isCustom ? <Key size={16} /> : <Wifi size={16} />}
+            <div className="network-chip" style={phoneServerData ? { borderColor: 'rgba(16, 185, 129, 0.5)', background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' } : undefined}>
+              {phoneServerData ? <Smartphone size={16} color="#10b981" /> : networkInfo.isCustom ? <Key size={16} /> : <Wifi size={16} />}
               <span>
-                {networkInfo.isCustom 
-                  ? `Custom Room: ${networkInfo.roomCode || networkInfo.room.replace('custom_', '')}` 
-                  : `Auto-Matched Wi-Fi / Hotspot (${networkInfo.room ? networkInfo.room.replace('network_v4_', '').replace('network_v6_', '').replace(/_/g, '.') : 'Local'})`}
+                {phoneServerData 
+                  ? `Connected to ${phoneServerData.deviceName || 'Android Phone'} (Local Server)` 
+                  : networkInfo.isCustom 
+                    ? `Custom Room: ${networkInfo.roomCode || networkInfo.room.replace('custom_', '')}` 
+                    : `Auto-Matched Wi-Fi / Hotspot (${networkInfo.room ? networkInfo.room.replace('network_v4_', '').replace('network_v6_', '').replace(/_/g, '.') : 'Local'})`}
               </span>
-              {networkInfo.isCustom && (
+              {phoneServerData ? (
+                <span className="room-role-badge host-badge" style={{ background: '#10b981', color: '#fff' }}>
+                  <Zap size={12} /> Direct Offline Link
+                </span>
+              ) : networkInfo.isCustom && (
                 isHost ? (
                   <span className="room-role-badge host-badge" title="You created this room and have room-closing privileges">
                     <Crown size={13} strokeWidth={2.5} /> Host (You)
@@ -1392,63 +1457,67 @@ function App() {
               )}
             </div>
             <span className="network-detail">
-              {networkInfo.isCustom 
-                ? 'Devices with the same room code exchange files directly. Your room is preserved on refresh.' 
-                : 'Devices on the same Wi-Fi router or mobile hotspot appear automatically.'}
+              {phoneServerData
+                ? `Connected directly to your phone at ${window.location.hostname}:4000 over local Wi-Fi / Hotspot. 100% offline, zero internet used.`
+                : networkInfo.isCustom 
+                  ? 'Devices with the same room code exchange files directly. Your room is preserved on refresh.' 
+                  : 'Devices on the same Wi-Fi router or mobile hotspot appear automatically.'}
             </span>
           </div>
 
-          <div className="room-controls-wrapper">
-            {!networkInfo.isCustom ? (
-              <>
-                <button type="button" onClick={handleCreateRoom} className="room-btn create-btn">
-                  <Key size={14} /> Create Room
-                </button>
-                <form onSubmit={handleJoinCustomRoom} className="room-form">
-                  <input
-                    type="text"
-                    placeholder="6-digit code"
-                    value={roomCodeInput}
-                    onChange={(e) => setRoomCodeInput(e.target.value)}
-                    className="room-input"
-                    maxLength={6}
-                  />
-                  <button type="submit" className="room-btn join-btn">
-                    Join <ArrowRight size={14} />
+          {!phoneServerData && (
+            <div className="room-controls-wrapper">
+              {!networkInfo.isCustom ? (
+                <>
+                  <button type="button" onClick={handleCreateRoom} className="room-btn create-btn">
+                    <Key size={14} /> Create Room
                   </button>
-                </form>
-              </>
-            ) : (
-              <div className="room-active-actions">
-                <button 
-                  type="button" 
-                  onClick={handleCopyRoomLink} 
-                  className="room-btn copy-link-btn"
-                  title="Copy 1-tap invite link for other devices"
-                >
-                  <Copy size={14} /> Copy Room Link
-                </button>
-                <button 
-                  type="button" 
-                  onClick={handleLeaveRoom} 
-                  className="room-btn leave-btn"
-                  title="Leave this room and return to auto-detected local network"
-                >
-                  <LogOut size={14} /> Leave Room
-                </button>
-                {isHost && (
+                  <form onSubmit={handleJoinCustomRoom} className="room-form">
+                    <input
+                      type="text"
+                      placeholder="6-digit code"
+                      value={roomCodeInput}
+                      onChange={(e) => setRoomCodeInput(e.target.value)}
+                      className="room-input"
+                      maxLength={6}
+                    />
+                    <button type="submit" className="room-btn join-btn">
+                      Join <ArrowRight size={14} />
+                    </button>
+                  </form>
+                </>
+              ) : (
+                <div className="room-active-actions">
                   <button 
                     type="button" 
-                    onClick={handleCloseRoom} 
-                    className="room-btn close-room-btn"
-                    title="Close this room for all participants"
+                    onClick={handleCopyRoomLink} 
+                    className="room-btn copy-link-btn"
+                    title="Copy 1-tap invite link for other devices"
                   >
-                    <XCircle size={14} /> Close Room
+                    <Copy size={14} /> Copy Room Link
                   </button>
-                )}
-              </div>
-            )}
-          </div>
+                  <button 
+                    type="button" 
+                    onClick={handleLeaveRoom} 
+                    className="room-btn leave-btn"
+                    title="Leave this room and return to auto-detected local network"
+                  >
+                    <LogOut size={14} /> Leave Room
+                  </button>
+                  {isHost && (
+                    <button 
+                      type="button" 
+                      onClick={handleCloseRoom} 
+                      className="room-btn close-room-btn"
+                      title="Close this room for all participants"
+                    >
+                      <XCircle size={14} /> Close Room
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="network-unified-divider"></div>
@@ -1522,10 +1591,11 @@ function App() {
               <button 
                 type="button" 
                 className="action-btn broadcast-btn"
-                onClick={handleOpenRecipientModal}
+                style={phoneServerData ? { background: '#10b981', borderColor: '#059669', color: '#fff' } : undefined}
+                onClick={phoneServerData ? uploadDirectlyToPhone : handleOpenRecipientModal}
               >
-                <Send size={16} />
-                Send Queue ({queue.length})
+                {phoneServerData ? <Zap size={16} /> : <Send size={16} />}
+                {phoneServerData ? `Send to Phone (${queue.length})` : `Send Queue (${queue.length})`}
               </button>
             )}
           </div>
@@ -1635,7 +1705,7 @@ function App() {
 
 
           {/* Files Shared by Android Phone */}
-          {phoneServerData && phoneSharedFiles.length > 0 && (
+          {phoneServerData && (
             <div className="glass-panel" style={{ marginBottom: '1.25rem', padding: '1.2rem', border: '1px solid rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.05)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
                 <h3 style={{ margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#10b981' }}>
@@ -1648,24 +1718,30 @@ function App() {
                   Refresh
                 </button>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {phoneSharedFiles.map(f => (
-                  <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0.9rem', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>{f.name}</div>
-                      <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>{formatBytes(f.size)}</div>
+              {phoneSharedFiles.length === 0 ? (
+                <div style={{ fontSize: '0.85rem', opacity: 0.85, color: 'var(--text-secondary, #94a3b8)', lineHeight: 1.5, background: 'rgba(0,0,0,0.15)', padding: '0.75rem 1rem', borderRadius: '8px' }}>
+                  📱 Phone connection is active! No files shared from phone yet. To download photos or files to this PC, tap <strong>"➕ Add Files"</strong> in the Transferase app on your phone.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {phoneSharedFiles.map(f => (
+                    <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0.9rem', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>{f.name}</div>
+                        <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>{formatBytes(f.size)}</div>
+                      </div>
+                      <a 
+                        href={`/api/download?id=${f.id}`}
+                        download={f.name}
+                        className="action-btn small-btn"
+                        style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#10b981', color: '#fff' }}
+                      >
+                        <Download size={14} /> Download
+                      </a>
                     </div>
-                    <a 
-                      href={`/api/download?id=${f.id}`}
-                      download={f.name}
-                      className="action-btn small-btn"
-                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#10b981', color: '#fff' }}
-                    >
-                      <Download size={14} /> Download
-                    </a>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -2074,7 +2150,8 @@ function App() {
                 {peers.map(peer => (
                   <div 
                     key={peer.id} 
-                    className="peer-sidebar-card glass-panel"
+                    className={`peer-sidebar-card glass-panel ${peer.isPhoneHost ? 'phone-host-card' : ''}`}
+                    style={peer.isPhoneHost ? { borderColor: 'rgba(16, 185, 129, 0.5)', background: 'rgba(16, 185, 129, 0.06)' } : undefined}
                     onDragOver={(e) => {
                       e.preventDefault();
                       e.currentTarget.classList.add('drag-active');
@@ -2088,11 +2165,14 @@ function App() {
                       e.currentTarget.classList.remove('drag-active');
                       if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                         addFilesToQueue(e.dataTransfer.files);
+                        if (peer.isPhoneHost) {
+                          showToast('Files added to queue! Ready to send to phone.', 'info');
+                        }
                       }
                     }}
                   >
                     <div className="peer-card-top-row">
-                      <div className="peer-sidebar-avatar">
+                      <div className="peer-sidebar-avatar" style={peer.isPhoneHost ? { background: 'rgba(16, 185, 129, 0.2)', color: '#10b981' } : undefined}>
                         {peer.deviceType === 'mobile' ? (
                           <Smartphone size={24} />
                         ) : peer.deviceType === 'tablet' ? (
@@ -2102,13 +2182,19 @@ function App() {
                         )}
                       </div>
                       <div className="peer-meta-text">
-                        <div className="peer-name">{peer.name}</div>
+                        <div className="peer-name" style={peer.isPhoneHost ? { color: '#10b981', fontWeight: 700 } : undefined}>{peer.name}</div>
                         <div className="peer-status-row">
-                          <span className="peer-type-tag">{peer.deviceType}</span>
-                          <span className="peer-online-tag">
-                            <span className="status-dot online"></span> Ready
+                          <span className="peer-type-tag" style={peer.isPhoneHost ? { background: 'rgba(16, 185, 129, 0.25)', color: '#10b981' } : undefined}>
+                            {peer.isPhoneHost ? 'Host Server' : peer.deviceType}
                           </span>
-                          {p2pStatus[peer.id] ? (
+                          <span className="peer-online-tag">
+                            <span className="status-dot online"></span> {peer.isPhoneHost ? 'Connected' : 'Ready'}
+                          </span>
+                          {peer.isPhoneHost ? (
+                            <span className="p2p-badge direct" title="Direct local Wi-Fi transfer to phone">
+                              <Zap size={11} fill="currentColor" /> Direct Link
+                            </span>
+                          ) : p2pStatus[peer.id] ? (
                             <span className="p2p-badge direct" title="Direct local transfer over Wi-Fi/Hotspot (bypasses server)">
                               <Zap size={11} fill="currentColor" /> Direct P2P
                             </span>
@@ -2124,11 +2210,51 @@ function App() {
                     {/* Data Limit Badge for device type */}
                     <div className="peer-data-limit-box" title="Maximum recommended file size to transfer without exhausting this device's browser memory">
                       <HardDrive size={13} className="limit-icon" />
-                      <span>{getDeviceDataLimit(peer.deviceType)}</span>
+                      <span>{peer.isPhoneHost ? 'Phone Storage Direct' : getDeviceDataLimit(peer.deviceType)}</span>
                     </div>
 
+                    {peer.isPhoneHost ? (
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          if (queue.length === 0) {
+                            queueFileInputRef.current?.click();
+                          } else {
+                            uploadDirectlyToPhone();
+                          }
+                        }}
+                        disabled={isSendingQueue}
+                        className="action-btn small-btn"
+                        style={{
+                          marginTop: '0.75rem',
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.4rem',
+                          background: '#10b981',
+                          borderColor: '#059669',
+                          color: '#fff',
+                          fontWeight: 600,
+                          padding: '0.55rem',
+                          borderRadius: '8px'
+                        }}
+                      >
+                        <Zap size={14} /> {queue.length > 0 ? `Send Queue to Phone (${queue.length})` : 'Select Files to Send'}
+                      </button>
+                    ) : (
+                      <button 
+                        type="button" 
+                        onClick={() => handleSendQueueToSpecificPeer(peer.id)}
+                        className="action-btn small-btn"
+                        style={{ marginTop: '0.5rem', width: '100%' }}
+                      >
+                        Send Queue to {peer.name.split(' ')[0]}
+                      </button>
+                    )}
+
                     <p className="drag-hint">
-                      drop files here to add to queue
+                      {peer.isPhoneHost ? 'drop files here to upload directly to phone' : 'drop files here to add to queue'}
                     </p>
                   </div>
                 ))}

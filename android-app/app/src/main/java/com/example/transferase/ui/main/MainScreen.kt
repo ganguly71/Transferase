@@ -521,10 +521,11 @@ fun NetworkInfoCard(
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text("1. Turn on Mobile Hotspot on this phone.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("1. Turn on Mobile Hotspot on this phone (Recommended: 100% offline).", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("2. Connect your PC / laptop to this phone's Hotspot.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("3. Open Chrome or Edge on PC and enter the address above.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("3. Open Chrome or Edge on PC and enter the address above (including :4000).", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("💡 Tip: If using Home Wi-Fi and PC can't reach phone, router 'AP Isolation' is blocking connections. Switch to Mobile Hotspot.", fontSize = 11.sp, color = Color(0xFFD97706))
         }
     }
 }

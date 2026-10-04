@@ -150,10 +150,12 @@ class EmbeddedHttpServer(
     }
 
     private fun handleStatus(output: OutputStream) {
+        val devName = "${android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${android.os.Build.MODEL}"
         val json = """
             {
               "status": "online",
               "app": "Transferase Mobile",
+              "deviceName": "${escapeJson(devName)}",
               "port": $port,
               "sharedCount": ${SharedFileManager.sharedFiles.value.size},
               "receivedCount": ${SharedFileManager.receivedFiles.value.size}

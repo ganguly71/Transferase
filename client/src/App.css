@@ -2049,4 +2049,18 @@ button:disabled, .action-btn:disabled {
   border: 1px solid rgba(148, 163, 184, 0.25);
 }
 
+/* Phone Host Card in Sidebar */
+.phone-host-card {
+  border: 1px solid rgba(16, 185, 129, 0.45) !important;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(255, 255, 255, 0.02)) !important;
+  box-shadow: 0 4px 18px rgba(16, 185, 129, 0.12) !important;
+  transition: all 0.2s ease-in-out;
+}
+
+.phone-host-card:hover {
+  border-color: rgba(16, 185, 129, 0.7) !important;
+  box-shadow: 0 6px 24px rgba(16, 185, 129, 0.2) !important;
+  transform: translateY(-2px);
+}
+
 
