@@ -5,6 +5,7 @@ const cors = require('cors');
 const path = require('path');
 
 const app = express();
+app.set('trust proxy', true);
 app.use(cors());
 
 // Serve static frontend files if built (for all-in-one cloud deployment on Render/Heroku/Railway)
@@ -20,9 +21,33 @@ const io = new Server(server, {
   }
 });
 
+// Helper to normalize an IPv6 address to its /64 network prefix
+// In IPv6, every device gets its own /128 address, but devices on the same
+// Wi-Fi router or mobile hotspot share the identical /64 network prefix (RFC 4291 / RFC 6177).
+function getIPv6Prefix64(ip) {
+  const clean = (ip || '').toLowerCase().trim();
+  const parts = clean.split('::');
+  let hextets = [];
+  if (parts.length === 2) {
+    const left = parts[0] ? parts[0].split(':') : [];
+    const right = parts[1] ? parts[1].split(':') : [];
+    const missing = 8 - (left.length + right.length);
+    const middle = Array(Math.max(0, missing)).fill('0');
+    hextets = [...left, ...middle, ...right];
+  } else {
+    hextets = clean.split(':');
+  }
+  const normalized = hextets.map(h => (parseInt(h || '0', 16) || 0).toString(16));
+  return normalized.slice(0, 4).join(':');
+}
+
 // Helper to determine client IP address and network group
 function getNetworkRoom(socket) {
-  const forwarded = socket.handshake.headers['x-forwarded-for'];
+  const headers = socket.handshake.headers || {};
+  // Priority: Cloudflare -> Nginx/Render x-real-ip -> x-forwarded-for -> socket address
+  const forwarded = headers['cf-connecting-ip'] || 
+                    headers['x-real-ip'] || 
+                    headers['x-forwarded-for'];
   let ip = forwarded ? forwarded.split(',')[0].trim() : (socket.handshake.address || socket.conn.remoteAddress || 'unknown');
 
   // Clean IPv6 mapped IPv4 prefix (::ffff:192.168.x.x)
@@ -30,9 +55,14 @@ function getNetworkRoom(socket) {
     ip = ip.substring(7);
   }
 
-  // Detect if connection is local / LAN
+  // Detect if connection is local / LAN (IPv4 or IPv6 private ranges)
   const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === 'localhost';
-  const isPrivateLan = /^192\.168\./.test(ip) || /^10\./.test(ip) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip);
+  const isPrivateLan = /^192\.168\./.test(ip) || 
+                       /^10\./.test(ip) || 
+                       /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ip) ||
+                       ip.toLowerCase().startsWith('fe80:') ||
+                       ip.toLowerCase().startsWith('fd') ||
+                       ip.toLowerCase().startsWith('fc');
 
   // If running locally on home LAN / localhost, place all LAN and localhost devices in the same local room!
   if (isLoopback || isPrivateLan) {
@@ -43,10 +73,21 @@ function getNetworkRoom(socket) {
     };
   }
 
-  // If running in cloud (Render/Heroku), group by external public IP so devices on same router match
+  // If client is on IPv6:
+  // Normalize to /64 network prefix so all devices on the same mobile hotspot or home IPv6 router match!
+  if (ip.includes(':')) {
+    const prefix64 = getIPv6Prefix64(ip);
+    return {
+      ip,
+      roomName: `network_v6_${prefix64.replace(/[^a-zA-Z0-9]/g, '_')}`,
+      isLocalMode: false
+    };
+  }
+
+  // If running in cloud on IPv4, group by external public IP so devices on same router match
   return {
     ip,
-    roomName: `network_${ip.replace(/[^a-zA-Z0-9]/g, '_')}`,
+    roomName: `network_v4_${ip.replace(/[^a-zA-Z0-9]/g, '_')}`,
     isLocalMode: false
   };
 }
@@ -163,7 +204,7 @@ io.on('connection', (socket) => {
   const initialName = savedName || `Peer-${socket.id.substring(0, 4)}`;
   const requestedRoomCode = (query.roomCode || '').trim().toLowerCase();
 
-  console.log(`User connected: ${socket.id} (user: ${persistentUserId}) from IP: ${rawIp}`);
+  console.log(`User connected: ${socket.id} (user: ${persistentUserId}) from IP: ${rawIp}, room: ${defaultNetworkRoom}`);
 
   const peerData = {
     id: socket.id,

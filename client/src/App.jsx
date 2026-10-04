@@ -163,7 +163,14 @@ function App() {
   };
 
   useEffect(() => {
-    const savedRoom = sessionStorage.getItem('transferase_room_code') || '';
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlRoom = (urlParams.get('room') || '').trim().toLowerCase();
+    if (urlRoom) {
+      sessionStorage.setItem('transferase_room_code', urlRoom);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    const savedRoom = urlRoom || sessionStorage.getItem('transferase_room_code') || '';
     const savedName = sessionStorage.getItem('transferase_device_name') || '';
     const isSavedCreator = savedRoom ? (sessionStorage.getItem('transferase_creator_room_' + savedRoom) === 'true') : false;
 
@@ -926,6 +933,21 @@ function App() {
     }
   };
 
+  const handleCopyRoomLink = () => {
+    const code = networkInfo.roomCode || sessionStorage.getItem('transferase_room_code');
+    if (!code) return;
+    const shareUrl = `${window.location.origin}${window.location.pathname}?room=${code}`;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        showToast('Copied room invite link to clipboard!', 'success');
+      }).catch(() => {
+        showToast(`Room code: ${code}`, 'info');
+      });
+    } else {
+      showToast(`Room code: ${code}`, 'info');
+    }
+  };
+
   const handleCopyText = (text, id) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
@@ -1008,7 +1030,7 @@ function App() {
               <span>
                 {networkInfo.isCustom 
                   ? `Custom Room: ${networkInfo.roomCode || networkInfo.room.replace('custom_', '')}` 
-                  : 'Auto-Matched Local Wi-Fi'}
+                  : 'Auto-Matched Local Wi-Fi / Hotspot'}
               </span>
               {networkInfo.isCustom && (
                 isHost ? (
@@ -1027,7 +1049,7 @@ function App() {
             <span className="network-detail">
               {networkInfo.isCustom 
                 ? 'Devices with the same room code exchange files directly. Your room is preserved on refresh.' 
-                : 'Devices on your same Wi-Fi router appear automatically.'}
+                : 'Devices on the same Wi-Fi router or mobile hotspot appear automatically.'}
             </span>
           </div>
 
@@ -1053,6 +1075,14 @@ function App() {
               </>
             ) : (
               <div className="room-active-actions">
+                <button 
+                  type="button" 
+                  onClick={handleCopyRoomLink} 
+                  className="room-btn copy-link-btn"
+                  title="Copy 1-tap invite link for other devices"
+                >
+                  <Copy size={14} /> Copy Room Link
+                </button>
                 <button 
                   type="button" 
                   onClick={handleLeaveRoom} 
