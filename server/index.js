@@ -564,6 +564,35 @@ io.on('connection', (socket) => {
   });
 });
 
+app.get('/api/debug-network', (req, res) => {
+  const headers = req.headers;
+  const net = getNetworkRoom({
+    handshake: {
+      headers: req.headers,
+      address: req.socket.remoteAddress
+    },
+    conn: { remoteAddress: req.socket.remoteAddress }
+  });
+  res.json({
+    clientIp: net.ip,
+    roomName: net.roomName,
+    headers: {
+      cfConnectingIp: headers['cf-connecting-ip'],
+      xRealIp: headers['x-real-ip'],
+      xForwardedFor: headers['x-forwarded-for'],
+      remoteAddress: req.socket.remoteAddress
+    },
+    connectedPeers: Array.from(peers.values()).map(p => ({
+      id: p.id,
+      name: p.name,
+      deviceType: p.deviceType,
+      ip: p.ip,
+      currentRoom: p.currentRoom,
+      defaultNetworkRoom: p.defaultNetworkRoom
+    }))
+  });
+});
+
 // Fallback to React index.html for any GET request (Express 5 safe regex)
 app.get(/^.*$/, (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'), (err) => {
