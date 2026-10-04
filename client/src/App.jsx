@@ -25,6 +25,7 @@ import {
   FileText,
   AlertTriangle,
   Clipboard,
+  Copy,
   Check,
   Layers,
   HardDrive,
