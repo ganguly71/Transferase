@@ -39,9 +39,13 @@ import {
   QrCode,
   Radio,
   Sparkles,
-  RefreshCw
+  RefreshCw,
+  Globe
 } from 'lucide-react';
 import './App.css';
+
+const ONLINE_SITE_URL = import.meta.env.VITE_ONLINE_SITE_URL || 'https://transferase.onrender.com';
+const isLocalSite = typeof window !== 'undefined' && window.location.hostname !== 'transferase.onrender.com';
 
 // Determine the server URL dynamically:
 // In development, port 4000. In production / online deployment, uses current origin (relayed through express)
@@ -1491,7 +1495,7 @@ function App() {
                 setTransferProgress({
                   fileName: `(${i + 1}/${itemsToSend.length}) ${item.name}`,
                   percent: pct,
-                  status: `${hasDirectP2P ? '⚡ Direct Local Transfer' : '☁️ Relay Transfer'} (${pct}%)...`,
+                  status: `${hasDirectP2P ? 'Direct Local Transfer' : 'Relay Transfer'} (${pct}%)...`,
                   isDownload: false
                 });
                 setTimeout(sendNextChunk, 8);
@@ -1728,10 +1732,18 @@ function App() {
         </div>
         <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
           <h1>Transferase</h1>
-          <p className="subtitle">
-            ⚡ Fast Local P2P & Direct Wi-Fi File Transfer
-          </p>
         </div>
+
+        {(phoneServerData || isLocalSite) && (
+          <a 
+            href={phoneServerData?.onlineUrl || ONLINE_SITE_URL}
+            className="header-go-online-btn"
+            title="Switch to Online Cloud Transferase (transferase.onrender.com)"
+          >
+            <Globe size={13} />
+            <span>GO ONLINE</span>
+          </a>
+        )}
       </div>
 
       {/* Unified Network & Your Device Box (Single Card) */}
@@ -1777,9 +1789,20 @@ function App() {
             </span>
           </div>
 
-          {!phoneServerData && (
-            <div className="room-controls-wrapper">
-              {!networkInfo.isCustom ? (
+          <div className="room-controls-wrapper">
+            {(phoneServerData || isLocalSite) && (
+              <a 
+                href={phoneServerData?.onlineUrl || ONLINE_SITE_URL}
+                className="room-btn go-online-btn"
+                title="Switch to Online Cloud Transferase (transferase.onrender.com)"
+              >
+                <Globe size={14} />
+                <span>GO ONLINE</span>
+              </a>
+            )}
+
+            {!phoneServerData && (
+              !networkInfo.isCustom ? (
                 <>
                   <button 
                     type="button" 
@@ -1855,9 +1878,9 @@ function App() {
                     </button>
                   )}
                 </div>
-              )}
-            </div>
-          )}
+              )
+            )}
+          </div>
         </div>
 
         <div className="network-unified-divider"></div>
@@ -2607,7 +2630,7 @@ function App() {
                             </span>
                           ) : (
                             <span className="p2p-badge relay" title="Connected via Relay Server">
-                              ☁️ Relay
+                              <strong>Relay</strong>
                             </span>
                           )}
                         </div>
@@ -2768,7 +2791,7 @@ function App() {
                         </div>
                         <div>
                           <div className="modal-peer-name">{peer.name}</div>
-                          <div className="modal-peer-type">{peer.deviceType} • {p2pStatus[peer.id] ? '⚡ Direct P2P' : '☁️ Relay'} • {getDeviceDataLimit(peer.deviceType)}</div>
+                          <div className="modal-peer-type">{peer.deviceType} • {p2pStatus[peer.id] ? '<strong>Direct P2P</strong>' : '<strong>Relay</strong>'} • {getDeviceDataLimit(peer.deviceType)}</div>
                         </div>
                       </div>
                       <div className="modal-peer-status">

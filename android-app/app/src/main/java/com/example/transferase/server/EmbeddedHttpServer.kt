@@ -194,6 +194,7 @@ class EmbeddedHttpServer(
               "app": "Transferase Mobile",
               "deviceName": "${escapeJson(devName)}",
               "port": $port,
+              "onlineUrl": "https://transferase.onrender.com",
               "sharedCount": ${SharedFileManager.sharedFiles.value.size},
               "receivedCount": ${SharedFileManager.receivedFiles.value.size},
               "peerCount": ${PeerManager.peers.value.size}

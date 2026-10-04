@@ -172,6 +172,25 @@ fun MainScreen(
                         }
                     },
                     actions = {
+                        Button(
+                            onClick = {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://transferase.onrender.com"))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            shape = RoundedCornerShape(999.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = EmeraldOnline,
+                                contentColor = Color.White
+                            ),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text("🌐 GO ONLINE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
                         FilledTonalButton(
                             onClick = {
                                 networkInfo = NetworkUtils.getNetworkInfo(context)
@@ -340,13 +359,32 @@ fun MainScreen(
                             )
                         }
 
-                        OutlinedButton(
-                            onClick = { showQrDialog = true },
-                            shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(1.dp, AccentCyan.copy(alpha = 0.4f)),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text("📱 QR CODE", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp, color = AccentCyan)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://transferase.onrender.com"))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Could not open browser", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, EmeraldOnline),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = EmeraldLight),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text("🌐 GO ONLINE", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                            }
+
+                            OutlinedButton(
+                                onClick = { showQrDialog = true },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, AccentCyan.copy(alpha = 0.4f)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text("📱 QR CODE", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp, color = AccentCyan)
+                            }
                         }
                     }
                 }
