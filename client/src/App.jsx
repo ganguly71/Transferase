@@ -33,7 +33,8 @@ import {
   Archive,
   LogOut,
   XCircle,
-  Crown
+  Crown,
+  Zap
 } from 'lucide-react';
 import './App.css';
 
@@ -116,6 +117,20 @@ const resolveDuplicateName = (desiredName, existingNames = []) => {
   return candidate;
 };
 
+// Binary packing helper for direct WebRTC DataChannel transfers
+const packChunkBuffer = (fileId, chunkIndex, rawArrayBuffer) => {
+  const encoder = new TextEncoder();
+  const fileIdBytes = encoder.encode(fileId);
+  const totalLength = 8 + fileIdBytes.length + rawArrayBuffer.byteLength;
+  const packed = new Uint8Array(totalLength);
+  const view = new DataView(packed.buffer);
+  view.setUint32(0, chunkIndex);
+  view.setUint32(4, fileIdBytes.length);
+  packed.set(fileIdBytes, 8);
+  packed.set(new Uint8Array(rawArrayBuffer), 8 + fileIdBytes.length);
+  return packed.buffer;
+};
+
 function App() {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -132,6 +147,13 @@ function App() {
   const [isZipping, setIsZipping] = useState(false);
   const [transferProgress, setTransferProgress] = useState(null); // { fileName, percent, status }
   const [notification, setNotification] = useState(null);
+
+  // WebRTC P2P DataChannel state & refs for direct file transfers
+  const peerConnections = useRef({}); // peerId -> RTCPeerConnection
+  const dataChannels = useRef({}); // peerId -> RTCDataChannel
+  const [p2pStatus, setP2pStatus] = useState({}); // peerId -> boolean
+  const socketRef = useRef(null);
+  const myIdRef = useRef('');
 
   // Queue State
   const [queue, setQueue] = useState([]); // array of { id, file, name, size, type, isText, textContent, caption }
@@ -186,9 +208,219 @@ function App() {
     });
     setSocket(newSocket);
 
+    socketRef.current = newSocket;
+
+    const handleFileMeta = (file, senderName) => {
+      incomingFiles.current[file.fileId] = {
+        name: file.name,
+        caption: file.caption || '',
+        isText: file.isText || false,
+        fileType: file.fileType || file.type,
+        size: file.size,
+        totalChunks: file.totalChunks,
+        senderName: senderName || 'Unknown',
+        chunks: [],
+        receivedCount: 0
+      };
+      setTransferProgress({
+        fileName: file.name,
+        percent: 5,
+        status: `Receiving from ${senderName || 'Peer'}...`,
+        isDownload: true
+      });
+    };
+
+    const handleFileChunk = (fileId, chunkIndex, chunkData) => {
+      const fileTransfer = incomingFiles.current[fileId];
+      if (fileTransfer) {
+        if (!fileTransfer.chunks[chunkIndex]) {
+          fileTransfer.receivedCount++;
+        }
+        fileTransfer.chunks[chunkIndex] = chunkData;
+        const pct = Math.round((fileTransfer.receivedCount / fileTransfer.totalChunks) * 100);
+
+        setTransferProgress({
+          fileName: fileTransfer.name,
+          percent: pct,
+          status: `Receiving (${pct}%)...`,
+          isDownload: true
+        });
+        
+        if (fileTransfer.receivedCount === fileTransfer.totalChunks) {
+          const blob = new Blob(fileTransfer.chunks, { type: fileTransfer.fileType });
+          const blobUrl = URL.createObjectURL(blob);
+
+          // Decode text preview if applicable
+          let textPreview = '';
+          if (fileTransfer.isText || (typeof fileTransfer.fileType === 'string' && fileTransfer.fileType.startsWith('text/'))) {
+            try {
+              const decoder = new TextDecoder('utf-8');
+              textPreview = fileTransfer.chunks.map(c => decoder.decode(c, { stream: true })).join('');
+            } catch (err) {
+              console.error('Error decoding text preview', err);
+            }
+          }
+
+          setReceivedFiles(prev => [{
+            id: fileId || Math.random().toString(36).substring(2, 9),
+            name: fileTransfer.name,
+            caption: fileTransfer.caption,
+            isText: fileTransfer.isText,
+            textPreview,
+            type: fileTransfer.fileType,
+            size: fileTransfer.size,
+            senderName: fileTransfer.senderName,
+            data: blobUrl,
+            blob: blob,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          }, ...prev]);
+
+          setTransferProgress(null);
+          showToast(`Received ${fileTransfer.name}!`, 'success');
+          delete incomingFiles.current[fileId];
+        }
+      }
+    };
+
+    const handleIncomingP2pMessage = (fromPeerId, data) => {
+      if (typeof data === 'string') {
+        try {
+          const meta = JSON.parse(data);
+          if (meta.type === 'meta') {
+            handleFileMeta(meta, meta.senderName || 'Peer');
+          }
+        } catch (err) {
+          console.error('Error parsing P2P meta', err);
+        }
+      } else if (data instanceof ArrayBuffer) {
+        try {
+          const view = new DataView(data);
+          const chunkIndex = view.getUint32(0);
+          const fileIdLen = view.getUint32(4);
+          const decoder = new TextDecoder();
+          const fileId = decoder.decode(new Uint8Array(data, 8, fileIdLen));
+          const chunkData = data.slice(8 + fileIdLen);
+          handleFileChunk(fileId, chunkIndex, chunkData);
+        } catch (err) {
+          console.error('Error reading P2P chunk', err);
+        }
+      }
+    };
+
+    const setupDataChannel = (peerId, dc) => {
+      dc.binaryType = 'arraybuffer';
+      dataChannels.current[peerId] = dc;
+
+      dc.onopen = () => {
+        console.log(`[WebRTC] Direct P2P DataChannel open with ${peerId}`);
+        setP2pStatus(prev => ({ ...prev, [peerId]: true }));
+        showToast('⚡ Direct local P2P link established with peer!', 'success');
+      };
+
+      dc.onclose = () => {
+        console.log(`[WebRTC] DataChannel closed with ${peerId}`);
+        setP2pStatus(prev => ({ ...prev, [peerId]: false }));
+      };
+
+      dc.onerror = (err) => {
+        console.warn(`[WebRTC] DataChannel error with ${peerId}:`, err);
+        setP2pStatus(prev => ({ ...prev, [peerId]: false }));
+      };
+
+      dc.onmessage = (event) => {
+        handleIncomingP2pMessage(peerId, event.data);
+      };
+    };
+
+    const createPeerConnection = (targetPeerId, isInitiator) => {
+      if (peerConnections.current[targetPeerId]) {
+        try { peerConnections.current[targetPeerId].close(); } catch (e) {}
+      }
+
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:global.stun.twilio.com:3478' }
+        ]
+      });
+
+      peerConnections.current[targetPeerId] = pc;
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && socketRef.current) {
+          socketRef.current.emit('signal', {
+            to: targetPeerId,
+            signalData: { type: 'candidate', candidate: event.candidate }
+          });
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+          setP2pStatus(prev => ({ ...prev, [targetPeerId]: false }));
+        }
+      };
+
+      if (isInitiator) {
+        try {
+          const dc = pc.createDataChannel('fileTransfer', { ordered: true });
+          setupDataChannel(targetPeerId, dc);
+          pc.createOffer().then(offer => {
+            pc.setLocalDescription(offer).then(() => {
+              if (socketRef.current) {
+                socketRef.current.emit('signal', {
+                  to: targetPeerId,
+                  signalData: { type: 'offer', sdp: offer }
+                });
+              }
+            });
+          }).catch(e => console.warn('Offer creation failed', e));
+        } catch (e) {
+          console.warn('DataChannel creation failed', e);
+        }
+      } else {
+        pc.ondatachannel = (event) => {
+          setupDataChannel(targetPeerId, event.channel);
+        };
+      }
+
+      return pc;
+    };
+
+    const handleReceiveSignal = async (fromPeerId, signalData) => {
+      try {
+        if (signalData.type === 'offer') {
+          const pc = createPeerConnection(fromPeerId, false);
+          await pc.setRemoteDescription(new RTCSessionDescription(signalData.sdp));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          if (socketRef.current) {
+            socketRef.current.emit('signal', {
+              to: fromPeerId,
+              signalData: { type: 'answer', sdp: answer }
+            });
+          }
+        } else if (signalData.type === 'answer') {
+          const pc = peerConnections.current[fromPeerId];
+          if (pc) {
+            await pc.setRemoteDescription(new RTCSessionDescription(signalData.sdp));
+          }
+        } else if (signalData.type === 'candidate') {
+          const pc = peerConnections.current[fromPeerId];
+          if (pc && signalData.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(signalData.candidate));
+          }
+        }
+      } catch (err) {
+        console.warn('Signal handling error', err);
+      }
+    };
+
     newSocket.on('connect', () => {
       setConnected(true);
       setMe(newSocket.id);
+      myIdRef.current = newSocket.id;
       showToast('Connected to Relay Service', 'success');
     });
 
@@ -197,8 +429,13 @@ function App() {
       showToast('Disconnected from Relay Service', 'error');
     });
 
+    newSocket.on('signal', ({ from, signalData }) => {
+      handleReceiveSignal(from, signalData);
+    });
+
     newSocket.on('init-profile', (data) => {
       setMe(data.id);
+      myIdRef.current = data.id;
       setMyName(data.name);
       sessionStorage.setItem('transferase_device_name', data.name);
       setNetworkInfo({
@@ -264,7 +501,13 @@ function App() {
     });
 
     newSocket.on('peers-list', (existingPeers) => {
-      setPeers(existingPeers.filter(p => p.id !== newSocket.id));
+      const filtered = existingPeers.filter(p => p.id !== newSocket.id);
+      setPeers(filtered);
+      filtered.forEach(p => {
+        if (newSocket.id > p.id) {
+          setTimeout(() => createPeerConnection(p.id, true), 400);
+        }
+      });
     });
 
     newSocket.on('peer-joined', (peer) => {
@@ -273,90 +516,44 @@ function App() {
         return [...without, peer];
       });
       showToast(`${peer.name} joined the room`, 'info');
+      if (newSocket.id > peer.id) {
+        setTimeout(() => createPeerConnection(peer.id, true), 400);
+      }
     });
 
     newSocket.on('peer-left', (peerId) => {
       setPeers(prev => prev.filter(p => p.id !== peerId));
+      if (peerConnections.current[peerId]) {
+        try { peerConnections.current[peerId].close(); } catch (e) {}
+        delete peerConnections.current[peerId];
+      }
+      if (dataChannels.current[peerId]) {
+        delete dataChannels.current[peerId];
+      }
+      setP2pStatus(prev => ({ ...prev, [peerId]: false }));
     });
 
     newSocket.on('peer-renamed', ({ id, name }) => {
       setPeers(prev => prev.map(p => p.id === id ? { ...p, name } : p));
     });
 
-    // Handle incoming file data directly via Socket.io relay
+    // Handle incoming file data via Socket.io relay fallback
     newSocket.on('file-transfer', ({ from, senderName, file }) => {
       if (file.type === 'meta') {
-        incomingFiles.current[file.fileId] = {
-          name: file.name,
-          caption: file.caption || '',
-          isText: file.isText || false,
-          fileType: file.fileType,
-          size: file.size,
-          totalChunks: file.totalChunks,
-          senderName: senderName || 'Unknown',
-          chunks: [],
-          receivedCount: 0
-        };
-        setTransferProgress({
-          fileName: file.name,
-          percent: 5,
-          status: `Receiving from ${senderName || 'Peer'}...`,
-          isDownload: true
-        });
+        handleFileMeta(file, senderName);
       } else if (file.type === 'chunk') {
-        const fileTransfer = incomingFiles.current[file.fileId];
-        if (fileTransfer) {
-          if (!fileTransfer.chunks[file.chunkIndex]) {
-            fileTransfer.receivedCount++;
-          }
-          fileTransfer.chunks[file.chunkIndex] = file.data;
-          const pct = Math.round((fileTransfer.receivedCount / fileTransfer.totalChunks) * 100);
-
-          setTransferProgress({
-            fileName: fileTransfer.name,
-            percent: pct,
-            status: `Receiving (${pct}%)...`,
-            isDownload: true
-          });
-          
-          if (fileTransfer.receivedCount === fileTransfer.totalChunks) {
-            const blob = new Blob(fileTransfer.chunks, { type: fileTransfer.fileType });
-            const blobUrl = URL.createObjectURL(blob);
-
-            // Decode text preview if applicable
-            let textPreview = '';
-            if (fileTransfer.isText || (typeof fileTransfer.fileType === 'string' && fileTransfer.fileType.startsWith('text/'))) {
-              try {
-                const decoder = new TextDecoder('utf-8');
-                textPreview = fileTransfer.chunks.map(c => decoder.decode(c, { stream: true })).join('');
-              } catch (err) {
-                console.error('Error decoding text preview', err);
-              }
-            }
-
-            setReceivedFiles(prev => [{
-              id: file.fileId || Math.random().toString(36).substring(2, 9),
-              name: fileTransfer.name,
-              caption: fileTransfer.caption,
-              isText: fileTransfer.isText,
-              textPreview,
-              type: fileTransfer.fileType,
-              size: fileTransfer.size,
-              senderName: fileTransfer.senderName,
-              data: blobUrl,
-              blob: blob,
-              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            }, ...prev]);
-
-            setTransferProgress(null);
-            showToast(`Received ${fileTransfer.name}!`, 'success');
-            delete incomingFiles.current[file.fileId];
-          }
-        }
+        handleFileChunk(file.fileId, file.chunkIndex, file.data);
       }
     });
 
-    return () => newSocket.disconnect();
+    return () => {
+      Object.values(peerConnections.current).forEach(pc => {
+        try { pc.close(); } catch (e) {}
+      });
+      peerConnections.current = {};
+      dataChannels.current = {};
+      newSocket.disconnect();
+    };
   }, []);
 
   // Global paste handler to add files or text directly to queue
@@ -785,12 +982,17 @@ function App() {
     setIsSendingQueue(true);
 
     const itemsToSend = [...queue];
-    const CHUNK_SIZE = 500000; // 500KB chunks
+    const CHUNK_SIZE = 64 * 1024; // 64KB safe chunk size for WebRTC & Socket buffers
 
     for (let i = 0; i < itemsToSend.length; i++) {
       const item = itemsToSend[i];
       const totalChunks = Math.ceil(item.file.size / CHUNK_SIZE) || 1;
       const fileId = Math.random().toString(36).substring(2, 9);
+
+      // Check which peers support direct P2P transfer
+      const p2pTargets = targetPeerIds.filter(pid => dataChannels.current[pid]?.readyState === 'open');
+      const relayTargets = targetPeerIds.filter(pid => !p2pTargets.includes(pid));
+      const hasDirectP2P = p2pTargets.length > 0;
 
       setTransferProgress({
         fileName: `(${i + 1}/${itemsToSend.length}) ${item.name}`,
@@ -799,11 +1001,10 @@ function App() {
         isDownload: false
       });
 
-      // Emit metadata first
-      targetPeerIds.forEach(peerId => {
-        socket.emit('file-transfer', {
-          to: peerId,
-          file: {
+      // Send metadata directly over P2P DataChannel
+      p2pTargets.forEach(peerId => {
+        try {
+          dataChannels.current[peerId].send(JSON.stringify({
             type: 'meta',
             fileId,
             name: item.name,
@@ -811,42 +1012,93 @@ function App() {
             isText: item.isText || false,
             fileType: item.type,
             size: item.size,
-            totalChunks
-          }
-        });
+            totalChunks,
+            senderName: myName || 'Peer'
+          }));
+        } catch (e) {
+          console.warn('P2P meta send error, falling back to relay for', peerId, e);
+          relayTargets.push(peerId);
+        }
       });
+
+      // Send metadata over Socket.io relay fallback
+      if (relayTargets.length > 0) {
+        relayTargets.forEach(peerId => {
+          socket.emit('file-transfer', {
+            to: peerId,
+            file: {
+              type: 'meta',
+              fileId,
+              name: item.name,
+              caption: item.caption || '',
+              isText: item.isText || false,
+              fileType: item.type,
+              size: item.size,
+              totalChunks
+            }
+          });
+        });
+      }
 
       if (item.file.size > 0) {
         let offset = 0;
         let chunkIndex = 0;
 
         await new Promise((resolve) => {
-          const sendNextChunk = () => {
+          const sendNextChunk = async () => {
             if (offset < item.file.size) {
               const chunk = item.file.slice(offset, offset + CHUNK_SIZE);
               const reader = new FileReader();
-              reader.onload = (e) => {
-                targetPeerIds.forEach(peerId => {
-                  socket.emit('file-transfer', {
-                    to: peerId,
-                    file: {
-                      type: 'chunk',
-                      fileId,
-                      chunkIndex,
-                      data: e.target.result // ArrayBuffer
+              reader.onload = async (e) => {
+                const arrayBuffer = e.target.result;
+                let packed = null;
+
+                // Send to direct P2P targets
+                for (const pid of p2pTargets) {
+                  const dc = dataChannels.current[pid];
+                  if (dc && dc.readyState === 'open') {
+                    if (dc.bufferedAmount > 2 * 1024 * 1024) {
+                      await new Promise(r => setTimeout(r, 30));
                     }
+                    if (!packed) {
+                      packed = packChunkBuffer(fileId, chunkIndex, arrayBuffer);
+                    }
+                    try {
+                      dc.send(packed);
+                    } catch (err) {
+                      console.warn('P2P chunk send error', err);
+                      relayTargets.push(pid);
+                    }
+                  } else {
+                    relayTargets.push(pid);
+                  }
+                }
+
+                // Send to relay targets
+                if (relayTargets.length > 0) {
+                  relayTargets.forEach(peerId => {
+                    socket.emit('file-transfer', {
+                      to: peerId,
+                      file: {
+                        type: 'chunk',
+                        fileId,
+                        chunkIndex,
+                        data: arrayBuffer
+                      }
+                    });
                   });
-                });
+                }
+
                 offset += CHUNK_SIZE;
                 chunkIndex++;
                 const pct = Math.round((chunkIndex / totalChunks) * 100);
                 setTransferProgress({
                   fileName: `(${i + 1}/${itemsToSend.length}) ${item.name}`,
                   percent: pct,
-                  status: `Sending (${pct}%) to ${targetPeerIds.length} peer(s)...`,
+                  status: `${hasDirectP2P ? '⚡ Direct Local Transfer' : '☁️ Relay Transfer'} (${pct}%)...`,
                   isDownload: false
                 });
-                setTimeout(sendNextChunk, 15);
+                setTimeout(sendNextChunk, 8);
               };
               reader.readAsArrayBuffer(chunk);
             } else {
@@ -1030,7 +1282,7 @@ function App() {
               <span>
                 {networkInfo.isCustom 
                   ? `Custom Room: ${networkInfo.roomCode || networkInfo.room.replace('custom_', '')}` 
-                  : 'Auto-Matched Local Wi-Fi / Hotspot'}
+                  : `Auto-Matched Wi-Fi / Hotspot (${networkInfo.room ? networkInfo.room.replace('network_v4_', '').replace('network_v6_', '').replace(/_/g, '.') : 'Local'})`}
               </span>
               {networkInfo.isCustom && (
                 isHost ? (
@@ -1716,6 +1968,15 @@ function App() {
                           <span className="peer-online-tag">
                             <span className="status-dot online"></span> Ready
                           </span>
+                          {p2pStatus[peer.id] ? (
+                            <span className="p2p-badge direct" title="Direct local transfer over Wi-Fi/Hotspot (bypasses server)">
+                              <Zap size={11} fill="currentColor" /> Direct P2P
+                            </span>
+                          ) : (
+                            <span className="p2p-badge relay" title="Connected via Relay Server">
+                              ☁️ Relay
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1834,7 +2095,7 @@ function App() {
                         </div>
                         <div>
                           <div className="modal-peer-name">{peer.name}</div>
-                          <div className="modal-peer-type">{peer.deviceType} • {getDeviceDataLimit(peer.deviceType)}</div>
+                          <div className="modal-peer-type">{peer.deviceType} • {p2pStatus[peer.id] ? '⚡ Direct P2P' : '☁️ Relay'} • {getDeviceDataLimit(peer.deviceType)}</div>
                         </div>
                       </div>
                       <div className="modal-peer-status">
