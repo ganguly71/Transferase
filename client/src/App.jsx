@@ -1733,23 +1733,11 @@ function App() {
         <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
           <h1>Transferase</h1>
         </div>
-
-        {(phoneServerData || isLocalSite) && (
-          <a 
-            href={phoneServerData?.onlineUrl || ONLINE_SITE_URL}
-            className="header-go-online-btn"
-            title="Switch to Online Cloud Transferase (transferase.onrender.com)"
-          >
-            <Globe size={13} />
-            <span>GO ONLINE</span>
-          </a>
-        )}
       </div>
 
       {/* Unified Network & Your Device Box (Single Card) */}
       <div 
-        className="network-unified-card glass-panel"
-        style={phoneServerData ? { border: '1px solid rgba(16, 185, 129, 0.45)', background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(255, 255, 255, 0.02))' } : undefined}
+        className={`network-unified-card glass-panel ${phoneServerData ? 'direct-offline-active' : ''}`}
       >
         <div className="network-unified-top">
           <div className="network-info-left">
@@ -2069,9 +2057,9 @@ function App() {
 
           {/* Files Shared by Android Phone */}
           {phoneServerData && (
-            <div className="glass-panel" style={{ marginBottom: '1.25rem', padding: '1.2rem', border: '1px solid rgba(16, 185, 129, 0.4)', background: 'rgba(16, 185, 129, 0.05)' }}>
+            <div className="glass-panel phone-shared-card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
-                <h3 style={{ margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#10b981' }}>
+                <h3 style={{ margin: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#047857' }}>
                   <Smartphone size={18} /> Files Available from Phone ({phoneSharedFiles.length})
                 </h3>
                 <button 
@@ -2082,16 +2070,16 @@ function App() {
                 </button>
               </div>
               {phoneSharedFiles.length === 0 ? (
-                <div style={{ fontSize: '0.85rem', opacity: 0.85, color: 'var(--text-secondary, #94a3b8)', lineHeight: 1.5, background: 'rgba(0,0,0,0.15)', padding: '0.75rem 1rem', borderRadius: '8px' }}>
-                  📱 Phone connection is active! No files shared from phone yet. To download photos or files to this PC, tap <strong>"➕ Add Files"</strong> in the Transferase app on your phone.
+                <div className="phone-shared-empty">
+                  Phone connection is active. No files shared from phone yet. To transfer files to this PC, tap <strong>"Add Files"</strong> in the Transferase app on your phone.
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {phoneSharedFiles.map(f => (
-                    <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.65rem 0.9rem', background: 'rgba(255, 255, 255, 0.04)', borderRadius: '10px', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+                    <div key={f.id} className="phone-file-item">
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>{f.name}</div>
-                        <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>{formatBytes(f.size)}</div>
+                        <div style={{ fontWeight: 600, fontSize: '0.92rem', color: '#1A0D06' }}>{f.name}</div>
+                        <div style={{ fontSize: '0.75rem', color: '#5A4030' }}>{formatBytes(f.size)}</div>
                       </div>
                       <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
                         {(f.isText || f.name.endsWith('.txt')) && (
@@ -2121,7 +2109,7 @@ function App() {
                           href={`/api/download?id=${f.id}`}
                           download={f.name}
                           className="action-btn small-btn"
-                          style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#10b981', color: '#fff' }}
+                          style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#059669', color: '#fff' }}
                         >
                           <Download size={14} /> Download
                         </a>
