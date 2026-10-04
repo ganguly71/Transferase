@@ -2,115 +2,85 @@
 
 > **Fast, zero-setup, local and cloud file sharing between phones, tablets, and computers.**
 
-Transferase is an all-in-one file transfer solution supporting:
-- 📱 **Android Native App (Local Server Mode)**: Your phone acts as the Wi-Fi/Hotspot host and web server — transfer files between PC and Phone with **0 internet connection**!
-- 🌐 **Online Web Relay**: Host on Render/Railway for instant cross-device sharing via Room Codes or local IP pairing.
-- 💻 **Local PC Server**: Run on your computer over local Wi-Fi.
+Transferase is the ultimate, all-in-one file transfer solution designed for lightning-fast sharing across all your devices. Whether you are completely offline in a remote area, on your home Wi-Fi, or across the globe, Transferase has a mode for you.
+
+## ✨ Features
+- 🌐 **Global Cloud Relay (transferase.onrender.com)**: Instantly share files across the internet using secure Room Codes, or automatically discover devices on the same Wi-Fi network. No installation required—just open the website!
+- 📱 **Android Native App (100% Offline Mode)**: Your phone acts as the host and web server. Transfer files between your PC and phone with **zero internet connection** via Mobile Hotspot.
+- 💻 **Local PC Server**: Run the relay server locally on your computer for private, ultra-fast transfers over your home Wi-Fi.
+- 📋 **Clipboard Sync**: Instantly share text snippets, links, and code blocks between devices.
+- 🎨 **Beautiful UI**: A highly polished, modern, and elegant interface with smooth animations and dynamic layouts.
 
 ---
 
-## 📥 How to Download & Install the Android APK on Your Phone
+## 🌍 The Main Web App: `transferase.onrender.com` (Recommended)
+
+The easiest and most powerful way to use Transferase is through our hosted web application. There's no need to install anything on your PC or phone—simply use your browser!
+
+### How to use the Online Web App:
+1. Open **[transferase.onrender.com](https://transferase.onrender.com)** on both of the devices you want to connect (e.g., your PC and your phone).
+2. **Auto-Discovery (Same Wi-Fi)**: If both devices are connected to the same Wi-Fi network, they will automatically discover each other! You'll see the devices instantly pop up on your screen.
+3. **Room Codes (Different Networks)**: If your devices are on different networks (e.g., PC on Ethernet, phone on 5G), simply enter a **Room ID** (like "1234") on both devices to instantly pair them securely over the internet.
+4. Drag and drop files, paste text, or click to send!
+
+---
+
+## 📱 Installing the Android App (For Offline/Local Use)
+
+If you want to transfer files when you have **no internet connection** or want a dedicated app experience, install the Android app. 
 
 The pre-compiled APK is included directly in this repository:
 - **File:** [`transferase-mobile.apk`](transferase-mobile.apk) *(12.5 MB)*
 
-### Method 1: Download from GitHub on your Phone (Easiest)
-1. Open this GitHub repository on your phone's browser (Chrome, Samsung Internet, etc.):
-   ```
+### Installation Steps:
+1. Open this GitHub repository on your Android phone's browser (Chrome, Samsung Internet, etc.):
+   ```text
    https://github.com/ganguly71/Transferase
    ```
-2. Tap on [`transferase-mobile.apk`](transferase-mobile.apk).
+2. Tap on [`transferase-mobile.apk`](transferase-mobile.apk) from the file list.
 3. Tap **Download** or **View Raw** to download the APK file directly to your phone.
 4. Once downloaded, open your phone's notification panel or **Downloads** folder and tap `transferase-mobile.apk` to install!
-   *(If prompted, tap **Settings** and enable "Allow from this source" / "Install Unknown Apps").*
+   *(If prompted, tap **Settings** and enable "Allow from this source" or "Install Unknown Apps").*
 
----
-
-### Method 2: Transfer from PC via USB Cable
-1. Connect your Android phone to your PC with a USB cable.
-2. On your phone, set the USB mode to **File Transfer (MTP)**.
-3. On your PC, open File Explorer, find `transferase-mobile.apk`, and copy it into your phone's **Download** or **Internal Storage** folder.
-4. On your phone, open your **Files** / **File Manager** app, go to **Downloads**, and tap `transferase-mobile.apk` to install.
-
----
-
-### Method 3: One-Click Quick Download via Local Wi-Fi
-If your PC and phone are currently on the same Wi-Fi network, you can serve the APK instantly from your computer terminal:
-```bash
-# In the project directory, run:
-npx serve -l 8000
-# OR if Python is installed:
-python -m http.server 8000
-```
-Then on your phone's browser, open `http://<your-pc-ip>:8000/transferase-mobile.apk` to download directly!
-
----
-
-## 🚀 How to Use: Phone as Local Server (100% Offline)
-
-Transfer files between your PC and Phone even with **no internet, no router, and no mobile data**:
-
-```
- ┌──────────────────────┐                     ┌──────────────────────┐
- │    Android Phone     │                     │     PC / Laptop      │
- │  (Hotspot + Server)  │ ~ ~ ~ Wi-Fi ~ ~ ~ > │  (Web Browser Only)  │
- │ http://192.168.43.1  │                     │ http://192.168.43.1  │
- └──────────────────────┘                     └──────────────────────┘
-```
-
+### Using the App (100% Offline Mode):
 1. **Enable Mobile Hotspot** on your Android phone *(cellular data does NOT need to be on)*.
 2. **Connect your PC** to your phone's Wi-Fi hotspot.
 3. Open the **Transferase** app on your phone and tap **START SERVER**.
-4. The app shows your address (e.g. `http://192.168.43.1:4000`) and a **QR Code**.
-5. On your PC, open Chrome, Edge, or Firefox and go to `http://192.168.43.1:4000`:
-   - **Send to Phone:** Drag & drop files on your PC browser and click **"⚡ Send to Phone"**. Files save directly to your phone's `Downloads/Transferase/` directory!
-   - **Download from Phone:** Tap **"➕ Add Files"** in the phone app to select photos, videos, or documents; they appear on your PC browser with 1-click **Download** buttons!
+4. The app shows your address (e.g., `http://192.168.43.1:4000`) and a **QR Code**.
+5. On your PC, open Chrome/Edge and navigate to that address to instantly send and receive files directly to your phone's local storage!
 
 ---
 
-## 🌐 Other Running Modes
+## 💻 Setting Up the Local PC App (Advanced)
 
-### 1. Online Deployment (Render.com / Cloud)
-Host this app online so you can transfer files anywhere over 4G/5G or separate Wi-Fi networks:
-1. Connect your repository to [Render.com](https://render.com).
-2. **Build Command:**
-   ```bash
-   npm install --prefix client && npm run build --prefix client && npm install --prefix server
-   ```
-3. **Start Command:**
-   ```bash
-   node server/index.js
-   ```
-4. Open the Render URL on both devices and connect via Room Code or automatic local network pairing!
+If you prefer to run the entire backend relay server locally on your own PC (for maximum privacy and local network speeds without using the online website):
 
-### 2. Run Locally on PC
-Double-click `start_web_transfer.bat` or run:
+### Prerequisites:
+- **Node.js** (v16 or higher) installed on your PC.
+
+### Quick Start (Windows):
+Simply double-click the `start_web_transfer.bat` file in the root directory. This script will automatically install dependencies and start both the backend server and the frontend client.
+
+### Manual Start (Mac/Linux/Windows):
+Open your terminal and run the following commands:
 ```bash
-# Start backend relay
-cd server && npm start
-
-# Start frontend dev server
-cd client && npm run dev
+# 1. Start backend relay server
+cd server
+npm install
+npm start
 ```
-
----
-
-## 📂 Project Structure
-
+In a new terminal:
+```bash
+# 2. Start frontend web app
+cd client
+npm install
+npm run dev
 ```
-├── transferase-mobile.apk    # Pre-built ready-to-install Android APK
-├── ANDROID_APP_GUIDE.md      # Detailed Android setup and troubleshooting guide
-├── android-app/              # Native Android App (Kotlin, Jetpack Compose, Embedded Server)
-│   ├── app/src/main/java/    # Server, UI, NetworkUtils, and Service logic
-│   └── app/src/main/assets/  # Bundled Transferase web client
-├── client/                   # React + Vite frontend application
-├── server/                   # Node.js + Express + Socket.io signaling server
-└── start_web_transfer.bat    # 1-click local PC startup script
-```
+Your local web app will be available at `http://localhost:5173`. Open this URL on your PC, and use your PC's local IP address (e.g., `http://192.168.1.15:5173`) on your phone's browser to connect.
 
 ---
 
 ## 🔒 Permissions & Privacy
-- All transfers in Local/Hotspot mode happen **strictly over your local Wi-Fi radio waves**.
-- No data is uploaded to third-party cloud servers or logs.
-- Files uploaded to the phone are placed in standard `Downloads/Transferase/` for easy access.
+- **Offline/Local Mode**: All transfers happen **strictly over your local Wi-Fi radio waves**. No data leaves your room.
+- **Online Mode (`transferase.onrender.com`)**: Files are transferred via secure WebRTC peer-to-peer connections whenever possible, or temporarily relayed through the server. No files are permanently stored on the cloud.
+- Files uploaded to the Android app are safely placed in the standard `Downloads/Transferase/` folder for easy access.
