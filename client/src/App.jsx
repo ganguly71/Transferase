@@ -1728,7 +1728,7 @@ function App() {
         </div>
         <div style={{ position: 'relative', zIndex: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
           <h1>Transferase</h1>
-          <p className="subtitle" style={{ color: '#94a3b8', fontSize: '0.88rem', letterSpacing: '0.04em', margin: 0 }}>
+          <p className="subtitle">
             ⚡ Fast Local P2P & Direct Wi-Fi File Transfer
           </p>
         </div>

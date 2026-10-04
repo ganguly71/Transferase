@@ -1,23 +1,15 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Rajdhani:wght@500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&family=Montserrat:wght@400;500;600;700&family=Rajdhani:wght@500;600;700&display=swap');
 
 :root {
-  --bg-color: #070a11;
-  --bg-gradient: radial-gradient(circle at 15% 15%, #0f172a 0%, #070a11 60%, #030508 100%);
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --accent-color: #3b82f6;
-  --accent-hover: #2563eb;
-  --accent-gradient: linear-gradient(135deg, #38bdf8 0%, #6366f1 50%, #a855f7 100%);
-  --card-bg: rgba(15, 23, 42, 0.72);
-  --card-bg-elevated: rgba(30, 41, 59, 0.8);
-  --card-border: rgba(255, 255, 255, 0.09);
-  --card-border-glow: rgba(99, 102, 241, 0.3);
-  --success-color: #10b981;
-  --success-glow: rgba(16, 185, 129, 0.25);
-  --warning-color: #f59e0b;
-  --danger-color: #ef4444;
-  --text-inverse: #ffffff;
+  --bg-color: #552c0f;
+  --bg-gradient: radial-gradient(circle at top left, #4a3424, #2a1a0f);
+  --text-primary: #3A2618;
+  --text-secondary: #5a4030;
+  --accent-color: #362214;
+  --accent-hover: #162e4257;
+  --card-bg: rgba(222, 211, 196, 0.92);
+  --card-border: #36391b2d;
+  --success-color: #276338;
 }
 
 * {
@@ -27,14 +19,12 @@
 }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Montserrat', sans-serif;
   background: var(--bg-gradient);
   background-color: var(--bg-color);
   color: var(--text-primary);
-  background-image: 
-    radial-gradient(ellipse at 15% 10%, rgba(56, 189, 248, 0.08) 0%, transparent 45%),
-    radial-gradient(ellipse at 85% 85%, rgba(139, 92, 246, 0.08) 0%, transparent 45%),
-    radial-gradient(ellipse at 50% 50%, rgba(15, 23, 42, 0.9) 0%, #06090e 100%);
+  background-image: repeating-linear-gradient(45deg, rgba(251, 246, 239, 0.15) 0px, rgba(251, 246, 239, 0.15) 2px, transparent 2px, transparent 10px),
+                    repeating-linear-gradient(-45deg, rgba(251, 246, 239, 0.15) 0px, rgba(251, 246, 239, 0.15) 2px, transparent 2px, transparent 10px);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -48,59 +38,59 @@ body {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: 'Inter', sans-serif;
+  font-family: 'Playfair Display', serif;
   font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.02em;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .glass-panel {
   background: var(--card-bg);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--card-border);
-  border-radius: 18px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 2px solid var(--card-border);
+  border-radius: 0px;
   padding: 24px;
-  box-shadow: 0 10px 35px -5px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  transition: border-color 0.25s ease, box-shadow 0.25s ease;
-}
-
-.glass-panel:hover {
-  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 6px 6px 0px rgba(58, 38, 24, 0.15), inset 0 0 0 1px #A9744F;
 }
 
 button {
   cursor: pointer;
-  border: none;
-  font-family: 'Inter', sans-serif;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  border-radius: 10px;
+  border: 1px solid var(--text-primary);
+  font-family: 'Montserrat', sans-serif;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 1px;
+  border-radius: 0 !important;
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 12px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.5);
+  background: var(--bg-color);
+  border-left: 1px solid var(--card-border);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 999px;
+  background: var(--accent-color);
+  border: 2px solid var(--bg-color);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.28);
+  background: var(--text-primary);
 }
 
 /* Global High-Contrast Input & Placeholder Styling */
 input::placeholder,
 textarea::placeholder {
-  color: #64748b !important;
-  opacity: 0.9 !important;
+  color: #7a5c48 !important;
+  opacity: 0.85 !important;
 }
 
 input,
 textarea {
   color: var(--text-primary);
-  font-family: 'Inter', sans-serif;
 }
+
+/* Adding global inverse text var */
+:root { --text-inverse: #FBF6EF; }
