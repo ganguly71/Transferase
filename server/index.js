@@ -21,50 +21,85 @@ const io = new Server(server, {
   }
 });
 
+// Clean and normalize IP string from brackets, ports, and prefixes
+function sanitizeIp(raw) {
+  if (!raw) return '';
+  let str = Array.isArray(raw) ? String(raw[0] || '') : String(raw).trim();
+  if (str.includes(',')) {
+    str = str.split(',')[0].trim();
+  }
+  if (str.startsWith('::ffff:')) {
+    str = str.substring(7);
+  }
+  // Strip square brackets if IPv6 with port: [2409:40d0:...]:51234
+  if (str.startsWith('[') && str.includes(']')) {
+    str = str.substring(1, str.indexOf(']'));
+  } else if (!str.includes(':') && str.includes(':')) {
+    // IPv4 with port: 1.2.3.4:5678
+    str = str.split(':')[0];
+  }
+  return str.trim();
+}
+
 // Helper to normalize an IPv6 address to its /64 network prefix
 // In IPv6, every device gets its own /128 address, but devices on the same
 // Wi-Fi router or mobile hotspot share the identical /64 network prefix (RFC 4291 / RFC 6177).
 function getIPv6Prefix64(ip) {
-  const clean = (ip || '').toLowerCase().trim();
+  const clean = sanitizeIp(ip).toLowerCase();
   const parts = clean.split('::');
   let hextets = [];
   if (parts.length === 2) {
-    const left = parts[0] ? parts[0].split(':') : [];
-    const right = parts[1] ? parts[1].split(':') : [];
+    const left = parts[0] ? parts[0].split(':').filter(Boolean) : [];
+    const right = parts[1] ? parts[1].split(':').filter(Boolean) : [];
     const missing = 8 - (left.length + right.length);
     const middle = Array(Math.max(0, missing)).fill('0');
     hextets = [...left, ...middle, ...right];
   } else {
-    hextets = clean.split(':');
+    hextets = clean.split(':').filter(Boolean);
   }
-  const normalized = hextets.map(h => (parseInt(h || '0', 16) || 0).toString(16));
+  const normalized = hextets.map(h => {
+    const val = parseInt(h || '0', 16);
+    return isNaN(val) ? '0' : val.toString(16);
+  });
+  while (normalized.length < 8) normalized.push('0');
   return normalized.slice(0, 4).join(':');
 }
 
 // Helper to normalize an IPv4 address to its /24 network prefix
-// In cellular CGNAT and local network pools, tethered devices and host devices
-// share the same /24 subnet (e.g. 152.56.132.60 and 152.56.132.143)
 function getIPv4Prefix24(ip) {
-  const parts = (ip || '').split('.');
+  const clean = sanitizeIp(ip);
+  const parts = clean.split('.');
   if (parts.length === 4) {
     return `${parts[0]}.${parts[1]}.${parts[2]}`;
   }
-  return ip;
+  return clean;
+}
+
+// Helper to normalize an IPv4 address to its /16 ISP/carrier pool
+function getIPv4Prefix16(ip) {
+  const clean = sanitizeIp(ip);
+  const parts = clean.split('.');
+  if (parts.length >= 2) {
+    return `${parts[0]}.${parts[1]}`;
+  }
+  return clean;
 }
 
 // Helper to determine client IP address and network group
 function getNetworkRoom(socket) {
   const headers = socket.handshake.headers || {};
-  // Priority: Cloudflare -> Nginx/Render x-real-ip -> x-forwarded-for -> socket address
-  const forwarded = headers['cf-connecting-ip'] || 
-                    headers['x-real-ip'] || 
-                    headers['x-forwarded-for'];
-  let ip = forwarded ? forwarded.split(',')[0].trim() : (socket.handshake.address || socket.conn.remoteAddress || 'unknown');
-
-  // Clean IPv6 mapped IPv4 prefix (::ffff:192.168.x.x)
-  if (ip.startsWith('::ffff:')) {
-    ip = ip.substring(7);
+  // Priority: Cloudflare -> x-forwarded-for (first client IP) -> x-real-ip -> socket address
+  const forwardedHeader = headers['cf-connecting-ip'] || 
+                          headers['x-forwarded-for'] || 
+                          headers['x-real-ip'];
+  let rawIp = '';
+  if (forwardedHeader) {
+    rawIp = Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader;
+  } else {
+    rawIp = socket.handshake.address || socket.conn?.remoteAddress || 'unknown';
   }
+
+  const ip = sanitizeIp(rawIp);
 
   // Detect if connection is local / LAN (IPv4 or IPv6 private ranges)
   const isLoopback = ip === '127.0.0.1' || ip === '::1' || ip === 'localhost';
@@ -80,7 +115,10 @@ function getNetworkRoom(socket) {
     return {
       ip,
       roomName: 'local_lan_network',
-      isLocalMode: true
+      isLocalMode: true,
+      subnet24: '192.168.local',
+      subnet16: '192.168',
+      isV6: false
     };
   }
 
@@ -91,17 +129,24 @@ function getNetworkRoom(socket) {
     return {
       ip,
       roomName: `network_v6_${prefix64.replace(/[^a-zA-Z0-9]/g, '_')}`,
-      isLocalMode: false
+      isLocalMode: false,
+      subnet24: prefix64,
+      subnet16: prefix64.split(':').slice(0, 2).join(':'),
+      isV6: true
     };
   }
 
   // If running in cloud on IPv4:
   // Normalize to /24 subnet (first 3 octets) so mobile hotspot tethered devices and home routers match
   const prefix24 = getIPv4Prefix24(ip);
+  const prefix16 = getIPv4Prefix16(ip);
   return {
     ip,
     roomName: `network_v4_${prefix24.replace(/[^a-zA-Z0-9]/g, '_')}`,
-    isLocalMode: false
+    isLocalMode: false,
+    subnet24: prefix24,
+    subnet16: prefix16,
+    isV6: false
   };
 }
 
@@ -207,8 +252,85 @@ function removeParticipantFromRoom(roomCode, userId, socketId) {
   resolveRoomHost(room);
 }
 
+// Multi-tier helper to find matching room for a peer across dual-stack IPv4/IPv6, CGNAT, and hotspots
+function findMatchingRoomForPeer(peerData) {
+  if (peerData.isCustomRoom) return null;
+
+  for (const [otherId, other] of peers.entries()) {
+    if (otherId === peerData.id || other.isCustomRoom) continue;
+
+    // Check 1: STUN Reflexive Public IP Match (Crucial for dual-stack IPv4/IPv6 & Hotspot!)
+    // When both devices query STUN, they get the exact same public NAT IP even if one accessed Render via IPv6!
+    if (peerData.stunIp && other.stunIp && peerData.stunIp === other.stunIp && peerData.stunIp !== 'unknown') {
+      console.log(`[Auto-Match] Found STUN public IP match: ${peerData.name} and ${other.name} on ${peerData.stunIp}`);
+      return other.currentRoom;
+    }
+
+    // Check 2: Same Local Subnet (e.g. 192.168.43 on Android hotspot or 192.168.1 on home Wi-Fi)
+    if (peerData.localSubnet && other.localSubnet && peerData.localSubnet === other.localSubnet) {
+      const p16 = peerData.subnet16 || getIPv4Prefix16(peerData.ip);
+      const o16 = other.subnet16 || getIPv4Prefix16(other.ip);
+      // Android mobile hotspot always assigns 192.168.43.x, or same /16 carrier pool
+      if (peerData.localSubnet === '192.168.43' || (p16 && o16 && p16 === o16)) {
+        console.log(`[Auto-Match] Found Local Subnet match: ${peerData.name} and ${other.name} on ${peerData.localSubnet}`);
+        return other.currentRoom;
+      }
+    }
+
+    // Check 3: Same Public Subnet (/24 IPv4 or /64 IPv6)
+    if (peerData.defaultNetworkRoom && peerData.defaultNetworkRoom === other.defaultNetworkRoom) {
+      return other.currentRoom;
+    }
+
+    // Check 4: Same /16 Subnet (for mobile carriers where CGNAT varies within /16 pool)
+    const p16 = peerData.subnet16 || getIPv4Prefix16(peerData.ip);
+    const o16 = other.subnet16 || getIPv4Prefix16(other.ip);
+    if (!peerData.isV6 && !other.isV6 && p16 && o16 && p16 === o16 && p16 !== 'unknown') {
+      console.log(`[Auto-Match] Matched nearby /16 carrier pool: ${peerData.name} and ${other.name} on ${p16}`);
+      return other.currentRoom;
+    }
+  }
+
+  return null;
+}
+
+// Find nearby peers on the same network/carrier to suggest or auto-pair
+function findNearbyPeers(peerData) {
+  const nearby = [];
+  for (const [otherId, other] of peers.entries()) {
+    if (otherId === peerData.id) continue;
+    if (other.currentRoom === peerData.currentRoom) continue;
+
+    let matchReason = null;
+    if (peerData.stunIp && other.stunIp && peerData.stunIp === other.stunIp) {
+      matchReason = 'Same Gateway / Router (STUN Verified)';
+    } else if (peerData.localSubnet && other.localSubnet && peerData.localSubnet === other.localSubnet) {
+      matchReason = `Same Wi-Fi Subnet (${peerData.localSubnet}.x)`;
+    } else {
+      const p16 = peerData.subnet16 || getIPv4Prefix16(peerData.ip);
+      const o16 = other.subnet16 || getIPv4Prefix16(other.ip);
+      if (p16 && o16 && p16 === o16) {
+        matchReason = 'Same Local Network / Carrier Pool';
+      }
+    }
+
+    if (matchReason) {
+      nearby.push({
+        id: other.id,
+        name: other.name,
+        deviceType: other.deviceType,
+        roomCode: other.currentRoom,
+        reason: matchReason
+      });
+    }
+  }
+  return nearby;
+}
+
 io.on('connection', (socket) => {
-  const { ip: rawIp, roomName: defaultNetworkRoom } = getNetworkRoom(socket);
+  const net = getNetworkRoom(socket);
+  const rawIp = net.ip;
+  const defaultNetworkRoom = net.roomName;
 
   const query = socket.handshake.query || {};
   const deviceType = query.deviceType || 'desktop';
@@ -227,7 +349,14 @@ io.on('connection', (socket) => {
     ip: rawIp,
     defaultNetworkRoom,
     currentRoom: defaultNetworkRoom,
-    isCustomRoom: false
+    isCustomRoom: false,
+    subnet24: net.subnet24,
+    subnet16: net.subnet16,
+    isV6: net.isV6,
+    stunIp: null,
+    localSubnet: null,
+    localIp: null,
+    connectedAt: Date.now()
   };
 
   peers.set(socket.id, peerData);
@@ -273,6 +402,14 @@ io.on('connection', (socket) => {
     const activeHost = resolveRoomHost(room);
     isHost = (room.hostUserId === persistentUserId);
     currentHostName = activeHost ? activeHost.name : (isHost ? initialName : 'Host');
+  } else {
+    // Attempt auto-match with existing active peers on same network
+    const matched = findMatchingRoomForPeer(peerData);
+    if (matched) {
+      targetRoom = matched;
+      peerData.currentRoom = matched;
+      console.log(`[Initial Connect Match] Placed ${peerData.name} in room "${matched}"`);
+    }
   }
 
   socket.join(targetRoom);
@@ -297,6 +434,122 @@ io.on('connection', (socket) => {
 
   // Broadcast to other peers in the room that this user joined
   socket.to(targetRoom).emit('peer-joined', peerData);
+
+  // Inform about nearby peers if any exist
+  const initialNearby = findNearbyPeers(peerData);
+  if (initialNearby.length > 0) {
+    socket.emit('nearby-peers-detected', initialNearby);
+  }
+
+  // Handle client reporting WebRTC STUN reflexive IP and local subnet fingerprint
+  socket.on('sync-network-fingerprint', (data = {}) => {
+    peerData.stunIp = data.stunIp ? sanitizeIp(data.stunIp) : null;
+    peerData.localSubnet = data.localSubnet || null;
+    peerData.localIp = data.localIp || null;
+
+    console.log(`[Fingerprint Sync] Peer ${peerData.name} (${socket.id}) reported: stunIp=${peerData.stunIp}, localSubnet=${peerData.localSubnet}`);
+
+    // If currently in a default network room (not custom room), perform auto-match
+    if (!peerData.isCustomRoom) {
+      const matchedRoom = findMatchingRoomForPeer(peerData);
+      if (matchedRoom && matchedRoom !== peerData.currentRoom) {
+        console.log(`[Auto-Match Sync] Migrating ${peerData.name} from "${peerData.currentRoom}" to matched room "${matchedRoom}"`);
+        const oldRoom = peerData.currentRoom;
+        socket.leave(oldRoom);
+        socket.to(oldRoom).emit('peer-left', socket.id);
+
+        peerData.currentRoom = matchedRoom;
+        socket.join(matchedRoom);
+
+        socket.emit('room-changed', {
+          currentRoom: matchedRoom,
+          isCustomRoom: false,
+          roomCode: 'Auto-Matched Wi-Fi / Hotspot',
+          isHost: false,
+          hostName: ''
+        });
+
+        const activePeers = Array.from(peers.values()).filter(p => p.currentRoom === matchedRoom && p.id !== socket.id);
+        socket.emit('peers-list', activePeers);
+        socket.to(matchedRoom).emit('peer-joined', peerData);
+        return;
+      }
+    }
+
+    const nearby = findNearbyPeers(peerData);
+    if (nearby.length > 0) {
+      socket.emit('nearby-peers-detected', nearby);
+    }
+  });
+
+  // Instant 1-tap Auto-Pairing for nearby devices or active network peers
+  socket.on('auto-pair-request', (callback) => {
+    let targetPeer = null;
+
+    // 1. STUN or localSubnet match
+    for (const [otherId, other] of peers.entries()) {
+      if (otherId === socket.id) continue;
+      if (peerData.stunIp && other.stunIp && peerData.stunIp === other.stunIp) {
+        targetPeer = other;
+        break;
+      }
+      if (peerData.localSubnet && other.localSubnet && peerData.localSubnet === other.localSubnet) {
+        targetPeer = other;
+        break;
+      }
+    }
+
+    // 2. Same /16 carrier pool
+    if (!targetPeer) {
+      for (const [otherId, other] of peers.entries()) {
+        if (otherId === socket.id) continue;
+        const p16 = peerData.subnet16 || getIPv4Prefix16(peerData.ip);
+        const o16 = other.subnet16 || getIPv4Prefix16(other.ip);
+        if (p16 && o16 && p16 === o16) {
+          targetPeer = other;
+          break;
+        }
+      }
+    }
+
+    // 3. Any active peer on the server
+    if (!targetPeer && peers.size > 1) {
+      for (const [otherId, other] of peers.entries()) {
+        if (otherId !== socket.id) {
+          targetPeer = other;
+          break;
+        }
+      }
+    }
+
+    if (targetPeer) {
+      console.log(`[Auto-Pair Success] Pairing ${peerData.name} with ${targetPeer.name} in room "${targetPeer.currentRoom}"`);
+      const targetRoom = targetPeer.currentRoom;
+      const oldRoom = peerData.currentRoom;
+      socket.leave(oldRoom);
+      socket.to(oldRoom).emit('peer-left', socket.id);
+
+      peerData.currentRoom = targetRoom;
+      peerData.isCustomRoom = targetPeer.isCustomRoom;
+      socket.join(targetRoom);
+
+      socket.emit('room-changed', {
+        currentRoom: targetRoom,
+        isCustomRoom: targetPeer.isCustomRoom,
+        roomCode: targetPeer.isCustomRoom ? targetRoom.replace('custom_', '') : 'Auto-Paired Network',
+        isHost: false,
+        hostName: ''
+      });
+
+      const activePeers = Array.from(peers.values()).filter(p => p.currentRoom === targetRoom && p.id !== socket.id);
+      socket.emit('peers-list', activePeers);
+      socket.to(targetRoom).emit('peer-joined', peerData);
+
+      if (callback) callback({ success: true, pairedWith: targetPeer.name });
+    } else {
+      if (callback) callback({ success: false, error: 'No other active devices found right now. Open Transferase on your phone/other device to pair!' });
+    }
+  });
 
   // Join a custom room code
   socket.on('join-room', ({ roomCode, isCreator: explicitCreatorFlag }, callback) => {
@@ -577,6 +830,41 @@ io.on('connection', (socket) => {
   });
 });
 
+app.get('/api/status', (req, res) => {
+  res.json({
+    app: 'Transferase Relay',
+    status: 'online',
+    version: '1.0.0',
+    peersCount: peers.size,
+    roomsCount: rooms.size
+  });
+});
+
+app.get('/api/nearby-peers', (req, res) => {
+  const net = getNetworkRoom({
+    handshake: {
+      headers: req.headers,
+      address: req.socket.remoteAddress
+    },
+    conn: { remoteAddress: req.socket.remoteAddress }
+  });
+
+  const dummyPeer = {
+    id: 'query',
+    ip: net.ip,
+    subnet24: net.subnet24,
+    subnet16: net.subnet16,
+    isV6: net.isV6,
+    currentRoom: ''
+  };
+
+  const nearby = findNearbyPeers(dummyPeer);
+  res.json({
+    clientIp: net.ip,
+    nearby
+  });
+});
+
 app.get('/api/debug-network', (req, res) => {
   const headers = req.headers;
   const net = getNetworkRoom({
@@ -589,6 +877,8 @@ app.get('/api/debug-network', (req, res) => {
   res.json({
     clientIp: net.ip,
     roomName: net.roomName,
+    subnet24: net.subnet24,
+    subnet16: net.subnet16,
     headers: {
       cfConnectingIp: headers['cf-connecting-ip'],
       xRealIp: headers['x-real-ip'],
@@ -600,6 +890,9 @@ app.get('/api/debug-network', (req, res) => {
       name: p.name,
       deviceType: p.deviceType,
       ip: p.ip,
+      stunIp: p.stunIp,
+      localSubnet: p.localSubnet,
+      localIp: p.localIp,
       currentRoom: p.currentRoom,
       defaultNetworkRoom: p.defaultNetworkRoom
     }))

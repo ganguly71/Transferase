@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import JSZip from 'jszip';
+import QRCode from 'qrcode';
 import { 
   Share2, 
   Monitor, 
@@ -34,7 +35,11 @@ import {
   LogOut,
   XCircle,
   Crown,
-  Zap
+  Zap,
+  QrCode,
+  Radio,
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import './App.css';
 
@@ -131,6 +136,91 @@ const packChunkBuffer = (fileId, chunkIndex, rawArrayBuffer) => {
   return packed.buffer;
 };
 
+// WebRTC local candidate & STUN reflexive public IP discovery
+// Resolves dual-stack IPv4/IPv6 differences on mobile hotspots and Wi-Fi routers!
+const getNetworkFingerprint = () => {
+  return new Promise((resolve) => {
+    let resolved = false;
+    let stunIp = null;
+    let localSubnet = null;
+    let localIp = null;
+    const candidates = [];
+
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
+      try { pc.close(); } catch (ignored) {}
+      resolve({ stunIp, localSubnet, localIp, candidates });
+    };
+
+    const timer = setTimeout(finish, 1800);
+
+    let pc;
+    try {
+      pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:global.stun.twilio.com:3478' }
+        ]
+      });
+
+      pc.createDataChannel('detect_lan');
+
+      pc.onicecandidate = (event) => {
+        if (!event.candidate || !event.candidate.candidate) {
+          finish();
+          return;
+        }
+
+        const cand = event.candidate.candidate;
+        candidates.push(cand);
+
+        const parts = cand.split(' ');
+        const typIndex = parts.indexOf('typ');
+        if (typIndex !== -1) {
+          const type = parts[typIndex + 1];
+          if (type === 'srflx') {
+            if (!stunIp) stunIp = parts[4];
+            const raddrIndex = parts.indexOf('raddr');
+            if (raddrIndex !== -1) {
+              const rel = parts[raddrIndex + 1];
+              if (rel && rel.includes('.')) {
+                localIp = rel;
+                const octets = rel.split('.');
+                if (octets.length === 4) {
+                  localSubnet = `${octets[0]}.${octets[1]}.${octets[2]}`;
+                }
+              }
+            }
+          } else if (type === 'host') {
+            const hostIp = parts[4];
+            if (hostIp && !hostIp.endsWith('.local') && hostIp.includes('.')) {
+              localIp = hostIp;
+              const octets = hostIp.split('.');
+              if (octets.length === 4) {
+                localSubnet = `${octets[0]}.${octets[1]}.${octets[2]}`;
+              }
+            }
+          }
+        }
+
+        if (stunIp && localSubnet) {
+          clearTimeout(timer);
+          finish();
+        }
+      };
+
+      pc.createOffer()
+        .then(offer => pc.setLocalDescription(offer))
+        .catch(() => finish());
+    } catch (e) {
+      clearTimeout(timer);
+      finish();
+    }
+  });
+};
+
 function App() {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
@@ -147,6 +237,12 @@ function App() {
   const [isZipping, setIsZipping] = useState(false);
   const [transferProgress, setTransferProgress] = useState(null); // { fileName, percent, status }
   const [notification, setNotification] = useState(null);
+
+  // QR Code & Auto-Pair Modal states
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+  const [isPairing, setIsPairing] = useState(false);
+  const [nearbyPeers, setNearbyPeers] = useState([]);
 
   // WebRTC P2P DataChannel state & refs for direct file transfers
   const peerConnections = useRef({}); // peerId -> RTCPeerConnection
@@ -629,6 +725,20 @@ function App() {
       setMe(newSocket.id);
       myIdRef.current = newSocket.id;
       showToast('Connected to Relay Service', 'success');
+
+      // Discover STUN Reflexive IP & Local Subnet to auto-match devices across IPv4/IPv6 & Hotspot!
+      getNetworkFingerprint().then((fp) => {
+        if (newSocket && newSocket.connected && fp) {
+          console.log('[WebRTC Fingerprint] Synced with relay server:', fp);
+          newSocket.emit('sync-network-fingerprint', fp);
+        }
+      }).catch(() => {});
+    });
+
+    newSocket.on('nearby-peers-detected', (nearby) => {
+      if (Array.isArray(nearby)) {
+        setNearbyPeers(nearby);
+      }
     });
 
     newSocket.on('disconnect', () => {
@@ -1436,6 +1546,51 @@ function App() {
     }
   };
 
+  const handleAutoPair = () => {
+    if (!socket) return;
+    setIsPairing(true);
+    socket.emit('auto-pair-request', (res) => {
+      setIsPairing(false);
+      if (res && res.success) {
+        showToast(`⚡ Paired with ${res.pairedWith}!`, 'success');
+        setNearbyPeers([]);
+      } else {
+        showToast(res?.error || 'No other active device found yet', 'info');
+      }
+    });
+  };
+
+  const handleOpenQrModal = () => {
+    let activeCode = networkInfo.roomCode && networkInfo.roomCode !== 'Local Network' && networkInfo.roomCode !== 'Phone Server'
+      ? networkInfo.roomCode
+      : (networkInfo.room ? networkInfo.room.replace(/[^a-zA-Z0-9]/g, '').slice(-6) : '');
+
+    if (!activeCode) {
+      activeCode = Math.floor(100000 + Math.random() * 900000).toString();
+    }
+
+    if (!networkInfo.isCustom && socket) {
+      sessionStorage.setItem('transferase_room_code', activeCode);
+      socket.emit('join-room', { roomCode: activeCode, isCreator: true });
+    }
+
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(activeCode)}`;
+    QRCode.toDataURL(inviteUrl, {
+      width: 280,
+      margin: 2,
+      color: {
+        dark: '#030712',
+        light: '#ffffff'
+      }
+    }).then(url => {
+      setQrDataUrl(url);
+      setShowQrModal(true);
+    }).catch(err => {
+      console.warn('QR generation error', err);
+      setShowQrModal(true);
+    });
+  };
+
   const handleCreateRoom = () => {
     if (!socket) return;
     const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -1626,6 +1781,25 @@ function App() {
             <div className="room-controls-wrapper">
               {!networkInfo.isCustom ? (
                 <>
+                  <button 
+                    type="button" 
+                    onClick={handleAutoPair} 
+                    className="room-btn auto-pair-btn" 
+                    title="1-Tap auto-connect to nearby devices on this Wi-Fi or hotspot" 
+                    disabled={isPairing}
+                  >
+                    <Radio size={14} className={isPairing ? 'spin-slow' : ''} />
+                    <span>{isPairing ? 'Scanning...' : 'Auto-Pair'}</span>
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={handleOpenQrModal} 
+                    className="room-btn qr-btn" 
+                    title="Scan QR Code with Phone Camera to connect instantly"
+                  >
+                    <QrCode size={14} />
+                    <span>Phone QR</span>
+                  </button>
                   <button type="button" onClick={handleCreateRoom} className="room-btn create-btn">
                     <Key size={14} /> Create Room
                   </button>
@@ -1645,6 +1819,15 @@ function App() {
                 </>
               ) : (
                 <div className="room-active-actions">
+                  <button 
+                    type="button" 
+                    onClick={handleOpenQrModal} 
+                    className="room-btn qr-btn" 
+                    title="Show QR Code for this room"
+                  >
+                    <QrCode size={14} />
+                    <span>Room QR</span>
+                  </button>
                   <button 
                     type="button" 
                     onClick={handleCopyRoomLink} 
@@ -2316,16 +2499,58 @@ function App() {
 
             {peers.length === 0 ? (
               <div className="no-peers glass-panel">
-                <div className="pulse-circle">
-                  <Smartphone size={32} />
+                <div className="radar-sweep-container">
+                  <div className="radar-circle-pulse"></div>
+                  <div className="pulse-circle">
+                    <Smartphone size={32} />
+                  </div>
                 </div>
-                <h4>Waiting for nearby devices...</h4>
+                <h4>Scanning for local devices...</h4>
                 <p>
-                  Open this site on your mobile phone or laptop.
-                  {networkInfo.isCustom 
-                    ? ` Enter code "${networkInfo.room.replace('custom_', '')}" to connect.` 
-                    : ' Devices on the same Wi-Fi discover each other automatically.'}
+                  Open Transferase on your mobile phone or another device on the same Wi-Fi or Mobile Hotspot.
                 </p>
+
+                {nearbyPeers.length > 0 && (
+                  <div className="nearby-detected-box">
+                    <div className="nearby-detected-title">
+                      <Sparkles size={14} color="#f59e0b" />
+                      <span>Found {nearbyPeers.length} active device on this network:</span>
+                    </div>
+                    {nearbyPeers.map(np => (
+                      <div key={np.id} className="nearby-peer-item">
+                        <div className="nearby-peer-info">
+                          <strong>{np.name}</strong>
+                          <small>{np.reason}</small>
+                        </div>
+                        <button type="button" onClick={handleAutoPair} className="action-btn small-btn">
+                          Connect
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="no-peers-actions">
+                  <button 
+                    type="button" 
+                    onClick={handleAutoPair} 
+                    className="action-btn auto-pair-cta"
+                    disabled={isPairing}
+                    title="Send auto-pair signal to any nearby device on this network"
+                  >
+                    <Radio size={16} className={isPairing ? 'spin-slow' : ''} />
+                    <span>{isPairing ? 'Searching...' : 'Auto-Pair Nearby Devices'}</span>
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={handleOpenQrModal} 
+                    className="action-btn qr-cta secondary"
+                    title="Open QR Code to scan with your phone camera"
+                  >
+                    <QrCode size={16} />
+                    <span>Connect Phone (QR Code)</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="peers-sidebar-list">
@@ -2644,6 +2869,70 @@ function App() {
                 }}
               >
                 <Plus size={16} /> Add to Queue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Phone QR Code Instant Connect Modal */}
+      {showQrModal && (
+        <div className="modal-backdrop" onClick={() => setShowQrModal(false)}>
+          <div className="modal-content glass-panel qr-modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title-wrap">
+                <QrCode size={20} color="var(--accent-color)" />
+                <h3>Connect Phone Instantly</h3>
+              </div>
+              <button 
+                type="button" 
+                className="modal-close-btn"
+                onClick={() => setShowQrModal(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="qr-modal-body">
+              <p className="qr-instructions">
+                Scan this QR code with your phone's camera to connect immediately without entering room codes:
+              </p>
+
+              <div className="qr-image-wrapper">
+                {qrDataUrl ? (
+                  <img src={qrDataUrl} alt="Transferase QR Connect Code" className="qr-image" />
+                ) : (
+                  <div className="qr-loading">Generating QR code...</div>
+                )}
+              </div>
+
+              <div className="qr-url-box">
+                <span className="qr-url-text">
+                  {`${window.location.origin}${window.location.pathname}?room=${networkInfo.roomCode && networkInfo.roomCode !== 'Local Network' && networkInfo.roomCode !== 'Phone Server' ? networkInfo.roomCode : (networkInfo.room ? networkInfo.room.replace(/[^a-zA-Z0-9]/g, '').slice(-6) : 'auto')}`}
+                </span>
+                <button 
+                  type="button" 
+                  onClick={handleCopyRoomLink} 
+                  className="action-btn small-btn secondary"
+                  title="Copy link"
+                >
+                  <Copy size={14} /> Copy
+                </button>
+              </div>
+
+              <div className="qr-tip-badge">
+                <Zap size={14} color="#10b981" />
+                <span>Works seamlessly over Mobile Hotspot and local Wi-Fi.</span>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ marginTop: '0', display: 'flex', justifyContent: 'flex-end' }}>
+              <button 
+                type="button" 
+                className="room-btn secondary"
+                onClick={() => setShowQrModal(false)}
+              >
+                Close
               </button>
             </div>
           </div>
