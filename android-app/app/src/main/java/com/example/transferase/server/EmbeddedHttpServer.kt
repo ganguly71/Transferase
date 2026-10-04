@@ -26,6 +26,19 @@ class EmbeddedHttpServer(
         if (isRunning) return
         isRunning = true
 
+        // Background prune task for connected peer heartbeats
+        executor.execute {
+            while (isRunning) {
+                try {
+                    Thread.sleep(15000)
+                    if (!isRunning) break
+                    if (PeerManager.pruneExpiredPeers()) {
+                        broadcastEvent("peers_updated", getPeersJson())
+                    }
+                } catch (ignored: Exception) {}
+            }
+        }
+
         executor.execute {
             try {
                 serverSocket = ServerSocket(port)
@@ -57,6 +70,7 @@ class EmbeddedHttpServer(
             try { client.close() } catch (ignored: Exception) {}
         }
         sseClients.clear()
+        PeerManager.clearAll()
         Log.i(TAG, "Server stopped")
     }
 
@@ -124,15 +138,26 @@ class EmbeddedHttpServer(
                 }
             }
 
+            if (method == "OPTIONS") {
+                sendResponse(output, 204, "No Content", "text/plain", ByteArray(0))
+                return
+            }
+
             // Route handling
             when {
                 path == "/api/status" -> handleStatus(output)
+                path == "/api/peers" && method == "GET" -> handleListPeers(output)
+                path == "/api/peers/register" && method == "POST" -> handleRegisterPeer(input, headers, socket, output)
+                path == "/api/peers/heartbeat" && method == "POST" -> handlePeerHeartbeat(input, headers, output)
+                path == "/api/peers/rename" && method == "POST" -> handlePeerRename(input, headers, output)
+                path == "/api/peers/unregister" && method == "POST" -> handlePeerUnregister(input, headers, output)
+                path == "/api/device/rename" && method == "POST" -> handleDeviceRename(input, headers, output)
                 path == "/api/files" -> handleListSharedFiles(output)
                 path == "/api/received" -> handleListReceivedFiles(output)
                 path == "/api/download" -> handleDownload(queryString, output)
                 path == "/api/upload" && method == "POST" -> handleUpload(input, headers, output)
                 path == "/api/message" -> handleMessage(method, input, headers, output)
-                path == "/api/events" -> handleSse(output, socket)
+                path == "/api/events" -> handleSse(queryString, output, socket)
                 path.startsWith("/socket.io") -> handleSocketIo(output)
                 else -> handleStaticAsset(path, output)
             }
@@ -149,8 +174,20 @@ class EmbeddedHttpServer(
         }
     }
 
+    private fun getPeersJson(): String {
+        val phoneName = PeerManager.getPhoneDeviceName(context)
+        val netInfo = NetworkUtils.getNetworkInfo(context)
+        val hostPeerJson = """{"id":"phone_host_server","name":"${escapeJson(phoneName)} (Host)","deviceType":"mobile","isPhoneHost":true,"status":"online","ip":"${netInfo.primaryIp}"}"""
+
+        val clientPeers = PeerManager.peers.value.map { p ->
+            """{"id":"${escapeJson(p.id)}","name":"${escapeJson(p.name)}","deviceType":"${escapeJson(p.deviceType)}","isPhoneHost":false,"status":"online","ip":"${escapeJson(p.ip)}"}"""
+        }
+        val allPeers = listOf(hostPeerJson) + clientPeers
+        return "[${allPeers.joinToString(",")}]"
+    }
+
     private fun handleStatus(output: OutputStream) {
-        val devName = "${android.os.Build.MANUFACTURER.replaceFirstChar { it.uppercase() }} ${android.os.Build.MODEL}"
+        val devName = PeerManager.getPhoneDeviceName(context)
         val json = """
             {
               "status": "online",
@@ -158,10 +195,69 @@ class EmbeddedHttpServer(
               "deviceName": "${escapeJson(devName)}",
               "port": $port,
               "sharedCount": ${SharedFileManager.sharedFiles.value.size},
-              "receivedCount": ${SharedFileManager.receivedFiles.value.size}
+              "receivedCount": ${SharedFileManager.receivedFiles.value.size},
+              "peerCount": ${PeerManager.peers.value.size}
             }
         """.trimIndent()
         sendResponse(output, 200, "OK", "application/json", json.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun handleListPeers(output: OutputStream) {
+        val json = getPeersJson()
+        sendResponse(output, 200, "OK", "application/json", json.toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun handleRegisterPeer(input: InputStream, headers: Map<String, String>, socket: Socket, output: OutputStream) {
+        val body = readBodyString(input, headers)
+        val id = extractJsonField(body, "id") ?: ("usr_" + System.currentTimeMillis())
+        val name = extractJsonField(body, "name") ?: "Connected Device"
+        val deviceType = extractJsonField(body, "deviceType") ?: "desktop"
+        val ip = socket.inetAddress?.hostAddress ?: "unknown"
+
+        PeerManager.registerOrUpdate(id, name, deviceType, ip)
+        broadcastEvent("peers_updated", getPeersJson())
+        sendResponse(output, 200, "OK", "application/json", """{"success":true,"id":"$id"}""".toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun handlePeerHeartbeat(input: InputStream, headers: Map<String, String>, output: OutputStream) {
+        val body = readBodyString(input, headers)
+        val id = extractJsonField(body, "id")
+        if (id != null) {
+            PeerManager.heartbeat(id)
+        }
+        sendResponse(output, 200, "OK", "application/json", """{"success":true}""".toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun handlePeerRename(input: InputStream, headers: Map<String, String>, output: OutputStream) {
+        val body = readBodyString(input, headers)
+        val id = extractJsonField(body, "id")
+        val name = extractJsonField(body, "name")
+        if (id != null && !name.isNullOrBlank()) {
+            PeerManager.renamePeer(id, name)
+            broadcastEvent("peers_updated", getPeersJson())
+        }
+        sendResponse(output, 200, "OK", "application/json", """{"success":true}""".toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun handlePeerUnregister(input: InputStream, headers: Map<String, String>, output: OutputStream) {
+        val body = readBodyString(input, headers)
+        val id = extractJsonField(body, "id")
+        if (id != null) {
+            PeerManager.removePeer(id)
+            broadcastEvent("peers_updated", getPeersJson())
+        }
+        sendResponse(output, 200, "OK", "application/json", """{"success":true}""".toByteArray(StandardCharsets.UTF_8))
+    }
+
+    private fun handleDeviceRename(input: InputStream, headers: Map<String, String>, output: OutputStream) {
+        val body = readBodyString(input, headers)
+        val name = extractJsonField(body, "name")
+        if (!name.isNullOrBlank()) {
+            PeerManager.setPhoneDeviceName(context, name)
+            broadcastEvent("peers_updated", getPeersJson())
+            broadcastEvent("device_renamed", """{"name":"${escapeJson(name)}"}""")
+        }
+        sendResponse(output, 200, "OK", "application/json", """{"success":true}""".toByteArray(StandardCharsets.UTF_8))
     }
 
     private fun handleListSharedFiles(output: OutputStream) {
@@ -233,7 +329,6 @@ class EmbeddedHttpServer(
         val targetDir = SharedFileManager.getDownloadDir(context)
 
         if (fileName != null && fileName.isNotBlank()) {
-            // Direct streaming upload with X-File-Name header
             val destFile = File(targetDir, fileName)
             var written = 0L
             FileOutputStream(destFile).use { fos ->
@@ -260,17 +355,12 @@ class EmbeddedHttpServer(
 
         // Multipart/form-data upload fallback
         if (contentType.contains("multipart/form-data") && contentType.contains("boundary=")) {
-            val boundary = contentType.substring(contentType.indexOf("boundary=") + 9).trim().removeSurrounding("\"")
-            val boundaryBytes = ("--$boundary").toByteArray(StandardCharsets.UTF_8)
-
-            var actualName = "upload_${System.currentTimeMillis()}"
+            val actualName = "upload_${System.currentTimeMillis()}"
             val destFile = File(targetDir, actualName)
 
-            // Stream and save
             var totalRead = 0L
             FileOutputStream(destFile).use { fos ->
                 val buffer = ByteArray(64 * 1024)
-                var bytes: Int
                 var remaining = if (contentLength > 0) contentLength else 100 * 1024 * 1024L
                 while (remaining > 0) {
                     val toRead = if (remaining > buffer.size) buffer.size else remaining.toInt()
@@ -296,17 +386,7 @@ class EmbeddedHttpServer(
 
     private fun handleMessage(method: String, input: InputStream, headers: Map<String, String>, output: OutputStream) {
         if (method == "POST") {
-            val length = headers["content-length"]?.toIntOrNull() ?: 0
-            val body = if (length > 0) {
-                val bytes = ByteArray(length)
-                var read = 0
-                while (read < length) {
-                    val r = input.read(bytes, read, length - read)
-                    if (r == -1) break
-                    read += r
-                }
-                String(bytes, StandardCharsets.UTF_8)
-            } else ""
+            val body = readBodyString(input, headers)
 
             if (body.isNotBlank()) {
                 SharedFileManager.setMessage(body)
@@ -326,7 +406,7 @@ class EmbeddedHttpServer(
         }
     }
 
-    private fun handleSse(output: OutputStream, socket: Socket) {
+    private fun handleSse(queryString: String, output: OutputStream, socket: Socket) {
         val header = "HTTP/1.1 200 OK\r\n" +
                 "Content-Type: text/event-stream\r\n" +
                 "Cache-Control: no-cache\r\n" +
@@ -335,14 +415,24 @@ class EmbeddedHttpServer(
         output.write(header.toByteArray(StandardCharsets.UTF_8))
         output.flush()
 
+        val params = parseQuery(queryString)
+        val clientId = params["clientId"]
+        val clientName = params["clientName"]
+        val deviceType = params["deviceType"] ?: "desktop"
+        val clientIp = socket.inetAddress?.hostAddress ?: "unknown"
+
+        if (!clientId.isNullOrBlank()) {
+            PeerManager.registerOrUpdate(clientId, clientName ?: "Connected Device", deviceType, clientIp)
+            broadcastEvent("peers_updated", getPeersJson())
+        }
+
         sseClients.add(output)
-        val initialPing = "event: connected\ndata: {\"status\":\"connected\"}\n\n"
+        val initialPing = "event: connected\ndata: {\"status\":\"connected\",\"peers\":${getPeersJson()}}\n\n"
         output.write(initialPing.toByteArray(StandardCharsets.UTF_8))
         output.flush()
     }
 
     private fun handleSocketIo(output: OutputStream) {
-        // Socket.io polling handshake response
         val response = "0{\"sid\":\"transferase_mobile_sid\",\"upgrades\":[],\"pingInterval\":25000,\"pingTimeout\":20000,\"maxPayload\":100000000}"
         sendResponse(output, 200, "OK", "text/plain", response.toByteArray(StandardCharsets.UTF_8))
     }
@@ -357,26 +447,19 @@ class EmbeddedHttpServer(
         try {
             inputStream = context.assets.open(assetPath)
         } catch (e: Exception) {
-            // SPA fallback: If asset has no extension or doesn't exist, serve index.html
             try {
-                cleanPath = "index.html"
                 inputStream = context.assets.open("web/index.html")
-            } catch (ignored: Exception) {}
+            } catch (ignored: Exception) {
+                sendResponse(output, 404, "Not Found", "text/plain", "Asset not found".toByteArray())
+                return
+            }
         }
 
-        if (inputStream == null) {
-            val notFound = "<h1>404 Not Found</h1><p>Transferase Web App asset not found.</p>"
-            sendResponse(output, 404, "Not Found", "text/html", notFound.toByteArray(StandardCharsets.UTF_8))
-            return
-        }
-
-        val mimeType = getMimeType(cleanPath)
+        val mime = getMimeType(cleanPath)
         val header = "HTTP/1.1 200 OK\r\n" +
-                "Content-Type: $mimeType\r\n" +
+                "Content-Type: $mime\r\n" +
                 "Access-Control-Allow-Origin: *\r\n" +
-                "Cache-Control: max-age=3600\r\n" +
                 "Connection: close\r\n\r\n"
-
         try {
             output.write(header.toByteArray(StandardCharsets.UTF_8))
             val buf = ByteArray(32 * 1024)
@@ -390,6 +473,24 @@ class EmbeddedHttpServer(
         } finally {
             try { inputStream.close() } catch (ignored: Exception) {}
         }
+    }
+
+    private fun readBodyString(input: InputStream, headers: Map<String, String>): String {
+        val length = headers["content-length"]?.toIntOrNull() ?: 0
+        if (length <= 0) return ""
+        val bytes = ByteArray(length)
+        var read = 0
+        while (read < length) {
+            val r = input.read(bytes, read, length - read)
+            if (r == -1) break
+            read += r
+        }
+        return String(bytes, 0, read, StandardCharsets.UTF_8)
+    }
+
+    private fun extractJsonField(json: String, field: String): String? {
+        val pattern = Regex("\"$field\"\\s*:\\s*\"([^\"]*)\"")
+        return pattern.find(json)?.groupValues?.get(1)
     }
 
     private fun sendResponse(output: OutputStream, code: Int, status: String, contentType: String, body: ByteArray) {

@@ -1,36 +1,30 @@
 package com.example.transferase.theme
 
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 
-private val TransferaseColorScheme = darkColorScheme(
-    primary = CopperPrimary,
-    onPrimary = DarkBg,
-    primaryContainer = DarkCardElevated,
-    onPrimaryContainer = CopperLight,
-    secondary = AmberAccent,
-    onSecondary = DarkBg,
-    secondaryContainer = DarkCard,
-    onSecondaryContainer = AmberGlow,
-    tertiary = EmeraldOnline,
-    onTertiary = DarkBg,
-    background = DarkBg,
-    onBackground = TextPrimary,
-    surface = DarkSurface,
-    onSurface = TextPrimary,
-    surfaceVariant = DarkCard,
-    onSurfaceVariant = TextSecondary,
-    outline = BorderCopper,
-    outlineVariant = BorderSubtle,
-    error = ErrorRed,
-    onError = TextPrimary
+private val TransferaseColorScheme = lightColorScheme(
+    primary = WebAccentDark,
+    onPrimary = WebTextLight,
+    primaryContainer = WebCardBg,
+    onPrimaryContainer = WebTextPrimary,
+    secondary = WebCopper,
+    onSecondary = WebTextLight,
+    secondaryContainer = WebCardInnerBg,
+    onSecondaryContainer = WebTextPrimary,
+    tertiary = WebSuccess,
+    onTertiary = WebTextLight,
+    background = WebBgColor,
+    onBackground = WebTextLight,
+    surface = WebCardBgSolid,
+    onSurface = WebTextPrimary,
+    surfaceVariant = WebCardInnerBg,
+    onSurfaceVariant = WebTextSecondary,
+    outline = WebCardInsetBorder,
+    outlineVariant = WebCardBorder,
+    error = WebError,
+    onError = WebTextLight
 )
 
 @Composable

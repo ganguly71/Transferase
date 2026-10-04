@@ -187,8 +187,43 @@ function App() {
     }, 4500);
   };
 
+  // Generate distinct friendly device name if none exists
+  const getInitialDeviceName = () => {
+    const stored = sessionStorage.getItem('transferase_device_name');
+    if (stored) return stored;
+    const ua = navigator.userAgent;
+    let os = 'PC';
+    if (/Windows/i.test(ua)) os = 'Windows PC';
+    else if (/Macintosh|Mac OS X/i.test(ua)) os = 'MacBook';
+    else if (/iPhone/i.test(ua)) os = 'iPhone';
+    else if (/iPad/i.test(ua)) os = 'iPad';
+    else if (/Android/i.test(ua)) os = 'Android';
+    else if (/Linux/i.test(ua)) os = 'Linux PC';
+
+    let browser = '';
+    if (/Edg\//i.test(ua)) browser = 'Edge';
+    else if (/Chrome\//i.test(ua)) browser = 'Chrome';
+    else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) browser = 'Safari';
+    else if (/Firefox\//i.test(ua)) browser = 'Firefox';
+
+    const hash = Math.floor(100 + Math.random() * 900);
+    const gen = browser ? `${os} (${browser}) #${hash}` : `${os} #${hash}`;
+    sessionStorage.setItem('transferase_device_name', gen);
+    return gen;
+  };
+
   // Detect if running connected directly to the Android Phone Server
   useEffect(() => {
+    let heartbeatTimer = null;
+    let esInstance = null;
+    let myClientId = getStoredUserId();
+
+    const handleBeforeUnload = () => {
+      try {
+        navigator.sendBeacon('/api/peers/unregister', JSON.stringify({ id: myClientId }));
+      } catch (ignored) {}
+    };
+
     fetch('/api/status')
       .then(res => res.json())
       .then(data => {
@@ -196,21 +231,65 @@ function App() {
           console.log('[Transferase Mobile] Connected directly to Android Phone Server');
           setPhoneServerData(data);
           setConnected(true);
-          setMe('local_pc_client');
-          setMyName(prev => prev || sessionStorage.getItem('transferase_device_name') || 'Local PC');
 
-          // Register Phone as Connected Host Peer so PC sees it immediately
-          const phoneName = data.deviceName ? `${data.deviceName} (Host)` : 'Android Phone (Host Server)';
-          const phonePeer = {
-            id: 'phone_host_server',
-            name: phoneName,
-            deviceType: 'mobile',
-            isPhoneHost: true,
-            status: 'online',
-            ip: window.location.hostname
+          const myNameStr = getInitialDeviceName();
+          setMe(myClientId);
+          setMyName(myNameStr);
+
+          // Register this client device with the phone server
+          fetch('/api/peers/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: myClientId,
+              name: myNameStr,
+              deviceType: getDeviceType()
+            })
+          }).catch(() => {});
+
+          // Heartbeat keep-alive every 12 seconds
+          heartbeatTimer = setInterval(() => {
+            fetch('/api/peers/heartbeat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: myClientId })
+            }).catch(() => {});
+          }, 12000);
+
+          window.addEventListener('beforeunload', handleBeforeUnload);
+
+          // Helper to update peers list
+          const updatePeersFromList = (list) => {
+            if (Array.isArray(list)) {
+              const others = list
+                .filter(p => p.id !== myClientId)
+                .map(p => ({
+                  ...p,
+                  isPhoneHost: p.id === 'phone_host_server' || p.isPhoneHost
+                }));
+              setPeers(others);
+              if (others.length > 0) {
+                setSelectedPeerIds(others.map(p => p.id));
+              }
+            }
           };
-          setPeers([phonePeer]);
-          setSelectedPeerIds(['phone_host_server']);
+
+          // Initial peers fetch
+          fetch('/api/peers')
+            .then(r => r.json())
+            .then(list => updatePeersFromList(list))
+            .catch(() => {
+              const phoneName = data.deviceName ? `${data.deviceName} (Host)` : 'Android Phone (Host Server)';
+              setPeers([{
+                id: 'phone_host_server',
+                name: phoneName,
+                deviceType: 'mobile',
+                isPhoneHost: true,
+                status: 'online',
+                ip: window.location.hostname
+              }]);
+              setSelectedPeerIds(['phone_host_server']);
+            });
 
           setNetworkInfo({
             room: 'Phone Hotspot / Local Network',
@@ -235,7 +314,32 @@ function App() {
           fetchFiles();
 
           try {
-            const es = new EventSource('/api/events');
+            const es = new EventSource(`/api/events?clientId=${myClientId}&clientName=${encodeURIComponent(myNameStr)}&deviceType=${getDeviceType()}`);
+            esInstance = es;
+
+            es.addEventListener('connected', (e) => {
+              try {
+                const d = JSON.parse(e.data);
+                if (d.peers) updatePeersFromList(d.peers);
+              } catch (ignored) {}
+            });
+
+            es.addEventListener('peers_updated', (e) => {
+              try {
+                const list = JSON.parse(e.data);
+                updatePeersFromList(list);
+              } catch (ignored) {}
+            });
+
+            es.addEventListener('device_renamed', (e) => {
+              try {
+                const d = JSON.parse(e.data);
+                if (d.name) {
+                  setPhoneServerData(prev => prev ? { ...prev, deviceName: d.name } : null);
+                }
+              } catch (ignored) {}
+            });
+
             es.addEventListener('file_received', (e) => {
               try {
                 const parsed = JSON.parse(e.data);
@@ -244,10 +348,12 @@ function App() {
                 showToast('File received by Phone!', 'success');
               }
             });
+
             es.addEventListener('file_shared', () => {
               fetchFiles();
               showToast('Phone updated shared files list', 'info');
             });
+
             es.addEventListener('new_message', (e) => {
               try {
                 const parsed = JSON.parse(e.data);
@@ -277,6 +383,12 @@ function App() {
         }
       })
       .catch(() => {});
+
+    return () => {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      if (esInstance) esInstance.close();
+    };
   }, []);
 
   useEffect(() => {
@@ -1295,16 +1407,33 @@ function App() {
       setIsEditingName(false);
       return;
     }
-    socket.emit('rename-device', editNameValue.trim(), (response) => {
-      if (response.success) {
-        setMyName(response.name);
-        sessionStorage.setItem('transferase_device_name', response.name);
-        setIsEditingName(false);
-        showToast(`Renamed to ${response.name}`, 'success');
-      } else {
-        alert(response.error);
-      }
-    });
+    const newName = editNameValue.trim();
+
+    if (phoneServerData) {
+      setMyName(newName);
+      sessionStorage.setItem('transferase_device_name', newName);
+      setIsEditingName(false);
+      fetch('/api/peers/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: me, name: newName })
+      }).catch(() => {});
+      showToast(`Renamed to ${newName}`, 'success');
+      return;
+    }
+
+    if (socket) {
+      socket.emit('rename-device', newName, (response) => {
+        if (response.success) {
+          setMyName(response.name);
+          sessionStorage.setItem('transferase_device_name', response.name);
+          setIsEditingName(false);
+          showToast(`Renamed to ${response.name}`, 'success');
+        } else {
+          alert(response.error);
+        }
+      });
+    }
   };
 
   const handleCreateRoom = () => {
