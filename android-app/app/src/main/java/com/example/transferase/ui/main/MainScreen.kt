@@ -12,12 +12,11 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,7 +27,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
@@ -104,8 +102,8 @@ fun MainScreen(
 
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.90f,
-        targetValue = 1.20f,
+        initialValue = 0.92f,
+        targetValue = 1.18f,
         animationSpec = infiniteRepeatable(
             animation = tween(1000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -116,25 +114,25 @@ fun MainScreen(
     val totalSharedSize = sharedFiles.sumOf { it.size }
 
     Scaffold(
-        containerColor = WebBgColor,
+        containerColor = DarkBg,
         topBar = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(WebBgGradientBottom)
+                    .background(DarkBgGradientBottom)
             ) {
-                // Binary track animation visual matching web header
+                // Flowing binary data track
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0x55000000))
+                        .background(Color(0x33000000))
                         .padding(vertical = 4.dp)
                 ) {
                     Text(
-                        text = "01010100 01110010 01100001 01101110 01110011 01100110 01100101 01110010 01100001 01110011 01100101",
-                        fontSize = 10.sp,
+                        text = "01010100 01110010 01100001 01101110 01110011 01100110 01100101 01110010 01100001 01110011 01100101 00100000 01010000 00110010 01010000",
+                        fontSize = 9.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = WebCopper,
+                        color = Color(0x7738BDF8),
                         letterSpacing = 1.5.sp,
                         modifier = Modifier.fillMaxWidth(),
                         textAlign = TextAlign.Center
@@ -145,57 +143,53 @@ fun MainScreen(
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Surface(
-                                shape = RectangleShape,
-                                color = WebAccentDark,
-                                border = BorderStroke(1.dp, WebCopper),
-                                modifier = Modifier.size(32.dp)
+                                shape = CircleShape,
+                                color = AccentCyan.copy(alpha = 0.15f),
+                                border = BorderStroke(1.dp, AccentCyan.copy(alpha = 0.35f)),
+                                modifier = Modifier.size(36.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
-                                    Text("⚡", fontSize = 16.sp)
+                                    Text("⚡", fontSize = 18.sp)
                                 }
                             }
                             Spacer(modifier = Modifier.width(10.dp))
                             Column {
                                 Text(
-                                    "TRANSFERASE",
-                                    fontFamily = FontFamily.Serif,
-                                    fontWeight = FontWeight.Bold,
+                                    "Transferase",
+                                    fontWeight = FontWeight.ExtraBold,
                                     fontSize = 20.sp,
-                                    color = WebTextLight,
-                                    letterSpacing = 1.5.sp
+                                    color = TextPrimary,
+                                    letterSpacing = (-0.3).sp
                                 )
                                 Text(
-                                    "OFFLINE P2P LOCAL TRANSFER",
+                                    "FAST OFFLINE LOCAL P2P TRANSFER",
                                     fontSize = 9.sp,
-                                    fontFamily = FontFamily.SansSerif,
                                     fontWeight = FontWeight.Bold,
-                                    color = WebCopperLight,
-                                    letterSpacing = 1.sp
+                                    color = AccentCyan,
+                                    letterSpacing = 0.8.sp
                                 )
                             }
                         }
                     },
                     actions = {
-                        TextButton(
+                        FilledTonalButton(
                             onClick = {
                                 networkInfo = NetworkUtils.getNetworkInfo(context)
                                 SharedFileManager.refreshReceivedFiles(context)
                                 Toast.makeText(context, "Refreshed network & files", Toast.LENGTH_SHORT).show()
                             },
-                            shape = RectangleShape
+                            shape = RoundedCornerShape(999.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = Color(0x2238BDF8),
+                                contentColor = AccentCyan
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
-                            Text(
-                                "🔄 REFRESH",
-                                fontFamily = FontFamily.SansSerif,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = WebCopperLight,
-                                letterSpacing = 1.sp
-                            )
+                            Text("🔄 Refresh", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = WebBgGradientBottom
+                        containerColor = DarkBgGradientBottom
                     )
                 )
             }
@@ -206,46 +200,27 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
                 .drawBehind {
-                    // Radial gradient background like website
+                    // Modern dark space ambient gradient glow
                     drawRect(
                         brush = Brush.radialGradient(
-                            colors = listOf(WebBgGradientTop, WebBgGradientBottom),
-                            center = Offset(size.width * 0.2f, 0f),
-                            radius = size.maxDimension * 1.2f
+                            colors = listOf(DarkBgGradientTop, DarkBgGradientBottom),
+                            center = Offset(size.width * 0.15f, 0f),
+                            radius = size.maxDimension * 1.1f
                         )
                     )
-                    // Crosshatch texture
-                    val step = 32f
-                    val strokeW = 1.2f
-                    val lineCol = WebCrosshatchLine
-                    var x = -size.height
-                    while (x < size.width + size.height) {
-                        drawLine(
-                            color = lineCol,
-                            start = Offset(x, 0f),
-                            end = Offset(x + size.height, size.height),
-                            strokeWidth = strokeW
-                        )
-                        x += step
-                    }
-                    x = 0f
-                    while (x < size.width + size.height) {
-                        drawLine(
-                            color = lineCol,
-                            start = Offset(x, 0f),
-                            end = Offset(x - size.height, size.height),
-                            strokeWidth = strokeW
-                        )
-                        x += step
-                    }
+                    drawCircle(
+                        color = Color(0x0C38BDF8),
+                        radius = size.width * 0.5f,
+                        center = Offset(size.width * 0.85f, size.height * 0.35f)
+                    )
                 }
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. Unified Network Card (Matches website .network-unified-card)
+            // 1. Unified Network & Server Status Card
             item {
-                WebBrutalistCard {
-                    // Top: Connection & Status
+                ModernGlassCard {
+                    // Status Row
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -256,16 +231,16 @@ fun MainScreen(
                                 modifier = Modifier
                                     .size(10.dp)
                                     .scale(if (isRunning) pulseScale else 1f)
-                                    .background(if (isRunning) WebSuccess else WebError, shape = RectangleShape)
+                                    .clip(CircleShape)
+                                    .background(if (isRunning) EmeraldOnline else ErrorRed)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 if (isRunning) "SERVER ONLINE" else "SERVER STOPPED",
-                                fontFamily = FontFamily.Serif,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.ExtraBold,
                                 fontSize = 12.sp,
-                                letterSpacing = 1.sp,
-                                color = if (isRunning) WebSuccess else WebError
+                                letterSpacing = 0.5.sp,
+                                color = if (isRunning) EmeraldLight else Color(0xFFF87171)
                             )
                         }
 
@@ -277,47 +252,44 @@ fun MainScreen(
                                     TransferServerService.startService(context)
                                 }
                             },
-                            shape = RectangleShape,
+                            shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isRunning) WebError else WebSuccess
+                                containerColor = if (isRunning) ErrorRed else EmeraldOnline
                             ),
-                            border = BorderStroke(1.dp, WebTextPrimary),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                         ) {
                             Text(
                                 if (isRunning) "STOP SERVER" else "START SERVER",
-                                fontFamily = FontFamily.SansSerif,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.sp,
-                                letterSpacing = 1.sp,
-                                color = WebTextLight
+                                letterSpacing = 0.5.sp,
+                                color = Color.White
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(14.dp))
 
                     Text(
                         "ACCESS ADDRESS (ENTER IN PC BROWSER):",
-                        fontFamily = FontFamily.SansSerif,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = WebTextSecondary,
-                        letterSpacing = 1.sp
+                        color = TextMuted,
+                        letterSpacing = 0.8.sp
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     // Address row with Copy button
                     Surface(
-                        shape = RectangleShape,
-                        color = WebCardInnerBg,
-                        border = BorderStroke(1.dp, WebCardBorder),
+                        shape = RoundedCornerShape(12.dp),
+                        color = CardBgElevated,
+                        border = BorderStroke(1.dp, CardBorder),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
@@ -326,28 +298,27 @@ fun MainScreen(
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
-                                color = WebTextPrimary,
+                                color = AccentCyan,
                                 modifier = Modifier.weight(1f)
                             )
-                            Button(
+                            FilledTonalButton(
                                 onClick = {
                                     clipboardManager.setPrimaryClip(ClipData.newPlainText("Transferase URL", displayUrl))
                                     Toast.makeText(context, "Copied URL to clipboard!", Toast.LENGTH_SHORT).show()
                                 },
-                                shape = RectangleShape,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = WebAccentDark,
-                                    contentColor = WebTextLight
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = Color(0x3338BDF8),
+                                    contentColor = AccentCyan
                                 ),
-                                border = BorderStroke(1.dp, WebCopper),
-                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                             ) {
-                                Text("📋 COPY", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                Text("📋 Copy", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -355,28 +326,27 @@ fun MainScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Surface(
-                            shape = RectangleShape,
-                            color = if (networkInfo.connectionType.contains("Hotspot")) Color(0x33D97706) else WebSuccessBg,
-                            border = BorderStroke(1.dp, if (networkInfo.connectionType.contains("Hotspot")) WebAmber else WebSuccessBorder)
+                            shape = RoundedCornerShape(999.dp),
+                            color = if (networkInfo.connectionType.contains("Hotspot")) AmberBg else EmeraldBg,
+                            border = BorderStroke(1.dp, if (networkInfo.connectionType.contains("Hotspot")) AmberBorder else EmeraldBorder)
                         ) {
                             Text(
                                 "📶 ${networkInfo.connectionType.uppercase()}",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.SansSerif,
                                 letterSpacing = 0.5.sp,
-                                color = if (networkInfo.connectionType.contains("Hotspot")) WebAmber else WebSuccess,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                color = if (networkInfo.connectionType.contains("Hotspot")) AmberHotspot else EmeraldLight,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
 
                         OutlinedButton(
                             onClick = { showQrDialog = true },
-                            shape = RectangleShape,
-                            border = BorderStroke(1.dp, WebAccentDark),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, AccentCyan.copy(alpha = 0.4f)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
-                            Text("📱 QR CODE", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = WebAccentDark)
+                            Text("📱 QR CODE", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp, color = AccentCyan)
                         }
                     }
                 }
@@ -384,14 +354,13 @@ fun MainScreen(
 
             // 2. YOUR DEVICE Card
             item {
-                WebBrutalistCard {
+                ModernGlassCard {
                     Text(
                         "YOUR DEVICE",
-                        fontFamily = FontFamily.Serif,
-                        fontSize = 11.sp,
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
-                        color = WebTextSecondary,
-                        letterSpacing = 1.sp
+                        color = TextMuted,
+                        letterSpacing = 0.8.sp
                     )
 
                     Spacer(modifier = Modifier.height(6.dp))
@@ -404,40 +373,39 @@ fun MainScreen(
                         Column {
                             Text(
                                 phoneDeviceName,
-                                fontFamily = FontFamily.Serif,
                                 fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = WebTextPrimary
+                                fontWeight = FontWeight.ExtraBold,
+                                color = TextPrimary
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    shape = RectangleShape,
-                                    color = WebCardInnerBg,
-                                    border = BorderStroke(1.dp, WebCardBorder)
-                                ) {
-                                    Text(
-                                        "MOBILE • MAX SAFE: ~1 GB (RAM)",
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.SansSerif,
-                                        color = WebTextSecondary,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Surface(
+                                shape = RoundedCornerShape(999.dp),
+                                color = CardBgElevated,
+                                border = BorderStroke(1.dp, CardBorder)
+                            ) {
+                                Text(
+                                    "MOBILE • MAX SAFE: ~1 GB (RAM)",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TextSecondary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
                             }
                         }
 
-                        OutlinedButton(
+                        FilledTonalButton(
                             onClick = {
                                 renamePhoneInput = phoneDeviceName
                                 showRenamePhoneDialog = true
                             },
-                            shape = RectangleShape,
-                            border = BorderStroke(1.dp, WebCopper),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = Color(0x2238BDF8),
+                                contentColor = AccentCyan
+                            ),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
-                            Text("✏️ RENAME", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = WebTextPrimary)
+                            Text("✏️ Rename", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
 
@@ -450,13 +418,15 @@ fun MainScreen(
                     ) {
                         Button(
                             onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
-                            shape = RectangleShape,
-                            colors = ButtonDefaults.buttonColors(containerColor = WebAccentDark, contentColor = WebTextLight),
-                            border = BorderStroke(1.dp, WebCopper),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AccentBlue,
+                                contentColor = Color.White
+                            ),
                             modifier = Modifier.weight(1f),
                             contentPadding = PaddingValues(vertical = 10.dp)
                         ) {
-                            Text("📁 ADD FILES", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                            Text("📁 Add Files", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
 
                         Button(
@@ -466,7 +436,7 @@ fun MainScreen(
                                     val text = clip.getItemAt(0).text?.toString() ?: ""
                                     if (text.isNotBlank()) {
                                         SharedFileManager.addSharedText(context, text)
-                                        Toast.makeText(context, "Clipboard text shared to queue!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Clipboard shared to queue!", Toast.LENGTH_SHORT).show()
                                     } else {
                                         Toast.makeText(context, "Clipboard is empty", Toast.LENGTH_SHORT).show()
                                     }
@@ -474,24 +444,30 @@ fun MainScreen(
                                     Toast.makeText(context, "Clipboard is empty", Toast.LENGTH_SHORT).show()
                                 }
                             },
-                            shape = RectangleShape,
-                            colors = ButtonDefaults.buttonColors(containerColor = WebCardInnerBg, contentColor = WebTextPrimary),
-                            border = BorderStroke(1.dp, WebTextPrimary),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CardBgElevated,
+                                contentColor = TextPrimary
+                            ),
+                            border = BorderStroke(1.dp, CardBorder),
                             modifier = Modifier.weight(1f),
                             contentPadding = PaddingValues(vertical = 10.dp)
                         ) {
-                            Text("📋 PASTE CLIP", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                            Text("📋 Paste Clip", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
 
                         Button(
                             onClick = { showTextDialog = true },
-                            shape = RectangleShape,
-                            colors = ButtonDefaults.buttonColors(containerColor = WebCardInnerBg, contentColor = WebTextPrimary),
-                            border = BorderStroke(1.dp, WebTextPrimary),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = CardBgElevated,
+                                contentColor = TextPrimary
+                            ),
+                            border = BorderStroke(1.dp, CardBorder),
                             modifier = Modifier.weight(1f),
                             contentPadding = PaddingValues(vertical = 10.dp)
                         ) {
-                            Text("✏️ WRITE NOTE", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                            Text("✏️ Write Note", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -499,7 +475,7 @@ fun MainScreen(
 
             // 3. CONNECTED PEERS (THE NEW FEATURE)
             item {
-                WebBrutalistCard {
+                ModernGlassCard {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -507,25 +483,23 @@ fun MainScreen(
                     ) {
                         Text(
                             "CONNECTED PEERS",
-                            fontFamily = FontFamily.Serif,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = WebTextPrimary,
-                            letterSpacing = 1.sp
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = TextPrimary,
+                            letterSpacing = 0.5.sp
                         )
 
                         Surface(
-                            shape = RectangleShape,
-                            color = if (connectedPeers.isNotEmpty()) WebSuccessBg else WebCardInnerBg,
-                            border = BorderStroke(1.dp, if (connectedPeers.isNotEmpty()) WebSuccessBorder else WebCardBorder)
+                            shape = RoundedCornerShape(999.dp),
+                            color = if (connectedPeers.isNotEmpty()) EmeraldBg else CardBgElevated,
+                            border = BorderStroke(1.dp, if (connectedPeers.isNotEmpty()) EmeraldBorder else CardBorder)
                         ) {
                             Text(
                                 "${connectedPeers.size} ${if (connectedPeers.size == 1) "DEVICE" else "DEVICES"} READY",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.SansSerif,
-                                color = if (connectedPeers.isNotEmpty()) WebSuccess else WebTextSecondary,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                color = if (connectedPeers.isNotEmpty()) EmeraldLight else TextSecondary,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
                             )
                         }
                     }
@@ -534,30 +508,37 @@ fun MainScreen(
 
                     if (connectedPeers.isEmpty()) {
                         Surface(
-                            shape = RectangleShape,
-                            color = WebCardInnerBg,
-                            border = BorderStroke(1.dp, WebCardBorder),
+                            shape = RoundedCornerShape(14.dp),
+                            color = CardBgElevated.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, CardBorder),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
-                                modifier = Modifier.padding(16.dp),
+                                modifier = Modifier.padding(20.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text("📡", fontSize = 28.sp)
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Surface(
+                                    shape = CircleShape,
+                                    color = AccentCyan.copy(alpha = 0.12f),
+                                    modifier = Modifier.size(54.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text("📡", fontSize = 26.sp)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
                                 Text(
                                     "WAITING FOR NEARBY DEVICES...",
-                                    fontFamily = FontFamily.Serif,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp,
-                                    color = WebTextPrimary,
-                                    letterSpacing = 1.sp
+                                    color = TextPrimary,
+                                    letterSpacing = 0.5.sp
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     "Open $displayUrl on your PC, laptop, or other phone to connect automatically.",
                                     fontSize = 11.sp,
-                                    color = WebTextSecondary,
+                                    color = TextSecondary,
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -580,7 +561,7 @@ fun MainScreen(
 
             // 4. SENDING QUEUE (SHARED TO PC)
             item {
-                WebBrutalistCard {
+                ModernGlassCard {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -589,32 +570,29 @@ fun MainScreen(
                         Column {
                             Text(
                                 "SENDING QUEUE (SHARED TO PC)",
-                                fontFamily = FontFamily.Serif,
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = WebTextPrimary,
-                                letterSpacing = 1.sp
+                                fontWeight = FontWeight.ExtraBold,
+                                color = TextPrimary,
+                                letterSpacing = 0.5.sp
                             )
                             if (sharedFiles.isNotEmpty()) {
                                 Text(
                                     "Total: ${formatFileSize(totalSharedSize)} (${sharedFiles.size} items)",
                                     fontSize = 11.sp,
-                                    color = WebTextSecondary
+                                    color = TextSecondary
                                 )
                             }
                         }
 
                         if (sharedFiles.isNotEmpty()) {
                             TextButton(
-                                onClick = { SharedFileManager.clearSharedFiles() },
-                                shape = RectangleShape
+                                onClick = { SharedFileManager.clearSharedFiles() }
                             ) {
                                 Text(
                                     "CLEAR QUEUE",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = WebError,
-                                    letterSpacing = 1.sp
+                                    color = ErrorRed
                                 )
                             }
                         }
@@ -624,32 +602,31 @@ fun MainScreen(
 
                     if (sharedFiles.isEmpty()) {
                         Surface(
-                            shape = RectangleShape,
-                            color = WebCardInnerBg,
-                            border = BorderStroke(1.dp, WebCardBorder),
+                            shape = RoundedCornerShape(14.dp),
+                            color = CardBgElevated.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, CardBorder),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { filePickerLauncher.launch(arrayOf("*/*")) }
                         ) {
                             Column(
-                                modifier = Modifier.padding(18.dp),
+                                modifier = Modifier.padding(20.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text("📁", fontSize = 28.sp)
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     "SENDING QUEUE IS EMPTY",
-                                    fontFamily = FontFamily.Serif,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp,
-                                    color = WebTextPrimary,
-                                    letterSpacing = 1.sp
+                                    color = TextPrimary,
+                                    letterSpacing = 0.5.sp
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     "Tap 'Add Files', 'Paste Clip', or 'Write Note' above to share with PC.",
                                     fontSize = 11.sp,
-                                    color = WebTextSecondary,
+                                    color = TextSecondary,
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -676,7 +653,7 @@ fun MainScreen(
 
             // 5. RECEIVED FILES & TEXT (FROM PC)
             item {
-                WebBrutalistCard {
+                ModernGlassCard {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
@@ -684,24 +661,21 @@ fun MainScreen(
                     ) {
                         Text(
                             "RECEIVED FILES & TEXT (FROM PC)",
-                            fontFamily = FontFamily.Serif,
                             fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = WebTextPrimary,
-                            letterSpacing = 1.sp
+                            fontWeight = FontWeight.ExtraBold,
+                            color = TextPrimary,
+                            letterSpacing = 0.5.sp
                         )
 
                         if (receivedFiles.isNotEmpty()) {
                             TextButton(
-                                onClick = { SharedFileManager.clearReceivedFiles(context) },
-                                shape = RectangleShape
+                                onClick = { SharedFileManager.clearReceivedFiles(context) }
                             ) {
                                 Text(
                                     "CLEAR ALL",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = WebError,
-                                    letterSpacing = 1.sp
+                                    color = ErrorRed
                                 )
                             }
                         }
@@ -711,30 +685,29 @@ fun MainScreen(
 
                     if (receivedFiles.isEmpty()) {
                         Surface(
-                            shape = RectangleShape,
-                            color = WebCardInnerBg,
-                            border = BorderStroke(1.dp, WebCardBorder),
+                            shape = RoundedCornerShape(14.dp),
+                            color = CardBgElevated.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, CardBorder),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(
-                                modifier = Modifier.padding(18.dp),
+                                modifier = Modifier.padding(20.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Text("📥", fontSize = 28.sp)
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     "NO FILES OR TEXT RECEIVED YET",
-                                    fontFamily = FontFamily.Serif,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp,
-                                    color = WebTextPrimary,
-                                    letterSpacing = 1.sp
+                                    color = TextPrimary,
+                                    letterSpacing = 0.5.sp
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     "When PC sends files or text notes, they appear here instantly.",
                                     fontSize = 11.sp,
-                                    color = WebTextSecondary,
+                                    color = TextSecondary,
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -766,12 +739,10 @@ fun MainScreen(
             onDismissRequest = { showRenamePhoneDialog = false },
             title = {
                 Text(
-                    "RENAME DEVICE",
-                    fontFamily = FontFamily.Serif,
+                    "Rename Device",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = WebTextPrimary,
-                    letterSpacing = 1.sp
+                    fontSize = 17.sp,
+                    color = TextPrimary
                 )
             },
             text = {
@@ -779,19 +750,19 @@ fun MainScreen(
                     Text(
                         "Set a custom name for this phone so connected PCs can easily recognize it:",
                         fontSize = 12.sp,
-                        color = WebTextSecondary
+                        color = TextSecondary
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     OutlinedTextField(
                         value = renamePhoneInput,
                         onValueChange = { renamePhoneInput = it },
                         singleLine = true,
-                        shape = RectangleShape,
+                        shape = RoundedCornerShape(10.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = WebCopper,
-                            unfocusedBorderColor = WebCardBorder,
-                            focusedTextColor = WebTextPrimary,
-                            unfocusedTextColor = WebTextPrimary
+                            focusedBorderColor = AccentCyan,
+                            unfocusedBorderColor = CardBorder,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -808,19 +779,19 @@ fun MainScreen(
                         }
                         showRenamePhoneDialog = false
                     },
-                    shape = RectangleShape,
-                    colors = ButtonDefaults.buttonColors(containerColor = WebAccentDark, contentColor = WebTextLight)
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = Color.White)
                 ) {
-                    Text("SAVE", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Text("Save", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showRenamePhoneDialog = false }, shape = RectangleShape) {
-                    Text("CANCEL", color = WebTextSecondary)
+                TextButton(onClick = { showRenamePhoneDialog = false }) {
+                    Text("Cancel", color = TextSecondary)
                 }
             },
-            shape = RectangleShape,
-            containerColor = WebCardBgSolid
+            shape = RoundedCornerShape(18.dp),
+            containerColor = CardBgSolid
         )
     }
 
@@ -830,12 +801,10 @@ fun MainScreen(
             onDismissRequest = { showTextDialog = false },
             title = {
                 Text(
-                    "WRITE OR PASTE TEXT NOTE",
-                    fontFamily = FontFamily.Serif,
+                    "Write or Paste Text Note",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = WebTextPrimary,
-                    letterSpacing = 1.sp
+                    fontSize = 17.sp,
+                    color = TextPrimary
                 )
             },
             text = {
@@ -845,8 +814,8 @@ fun MainScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Note Content:", fontSize = 12.sp, color = WebTextSecondary)
-                        TextButton(
+                        Text("Note Content:", fontSize = 12.sp, color = TextSecondary)
+                        FilledTonalButton(
                             onClick = {
                                 val clip = clipboardManager.primaryClip
                                 if (clip != null && clip.itemCount > 0) {
@@ -854,25 +823,26 @@ fun MainScreen(
                                     textInputState = text
                                 }
                             },
-                            shape = RectangleShape
+                            shape = RoundedCornerShape(6.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                         ) {
-                            Text("📋 Paste Clipboard", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = WebCopper)
+                            Text("📋 Paste Clipboard", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = textInputState,
                         onValueChange = { textInputState = it },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(140.dp),
-                        shape = RectangleShape,
-                        placeholder = { Text("Enter text, URLs, notes, code snippets...", fontSize = 12.sp, color = WebTextMuted) },
+                        shape = RoundedCornerShape(10.dp),
+                        placeholder = { Text("Enter text, URLs, notes, code snippets...", fontSize = 12.sp, color = TextMuted) },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = WebCopper,
-                            unfocusedBorderColor = WebCardBorder,
-                            focusedTextColor = WebTextPrimary,
-                            unfocusedTextColor = WebTextPrimary
+                            focusedBorderColor = AccentCyan,
+                            unfocusedBorderColor = CardBorder,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
                         )
                     )
                 }
@@ -883,26 +853,26 @@ fun MainScreen(
                         val text = textInputState.trim()
                         if (text.isNotBlank()) {
                             SharedFileManager.addSharedText(context, text)
-                            Toast.makeText(context, "Note added to sending queue!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Note added to queue!", Toast.LENGTH_SHORT).show()
                             textInputState = ""
                             showTextDialog = false
                         } else {
                             Toast.makeText(context, "Note cannot be empty", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    shape = RectangleShape,
-                    colors = ButtonDefaults.buttonColors(containerColor = WebAccentDark, contentColor = WebTextLight)
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = Color.White)
                 ) {
-                    Text("ADD TO QUEUE", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Text("Add to Queue", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showTextDialog = false }, shape = RectangleShape) {
-                    Text("CANCEL", color = WebTextSecondary)
+                TextButton(onClick = { showTextDialog = false }) {
+                    Text("Cancel", color = TextSecondary)
                 }
             },
-            shape = RectangleShape,
-            containerColor = WebCardBgSolid
+            shape = RoundedCornerShape(18.dp),
+            containerColor = CardBgSolid
         )
     }
 
@@ -916,12 +886,10 @@ fun MainScreen(
             onDismissRequest = { showQrDialog = false },
             title = {
                 Text(
-                    "SCAN TO CONNECT",
-                    fontFamily = FontFamily.Serif,
+                    "Scan to Connect",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = WebTextPrimary,
-                    letterSpacing = 1.sp,
+                    fontSize = 17.sp,
+                    color = TextPrimary,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -934,22 +902,21 @@ fun MainScreen(
                     Text(
                         "Scan with your PC, laptop, or other phone camera:",
                         fontSize = 12.sp,
-                        color = WebTextSecondary,
+                        color = TextSecondary,
                         textAlign = TextAlign.Center
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     if (qrBitmap != null) {
                         Surface(
-                            shape = RectangleShape,
+                            shape = RoundedCornerShape(14.dp),
                             color = Color.White,
-                            border = BorderStroke(2.dp, WebCopper),
                             modifier = Modifier.padding(4.dp)
                         ) {
                             Image(
                                 bitmap = qrBitmap.asImageBitmap(),
                                 contentDescription = "QR Code",
                                 modifier = Modifier
-                                    .size(210.dp)
+                                    .size(200.dp)
                                     .padding(8.dp)
                             )
                         }
@@ -960,53 +927,44 @@ fun MainScreen(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         fontFamily = FontFamily.Monospace,
-                        color = WebTextPrimary
+                        color = AccentCyan
                     )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = { showQrDialog = false },
-                    shape = RectangleShape,
-                    colors = ButtonDefaults.buttonColors(containerColor = WebAccentDark, contentColor = WebTextLight)
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = Color.White)
                 ) {
-                    Text("CLOSE", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Text("Close", fontWeight = FontWeight.Bold)
                 }
             },
-            shape = RectangleShape,
-            containerColor = WebCardBgSolid
+            shape = RoundedCornerShape(18.dp),
+            containerColor = CardBgSolid
         )
     }
 }
 
 // -------------------------------------------------------------
-// Website Brutalist Card Wrapper (Exact 0-radius + 4px shadow)
+// Modern Glass Card Component (Rounded 18dp + Soft Shadow)
 // -------------------------------------------------------------
 @Composable
-fun WebBrutalistCard(
+fun ModernGlassCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit
 ) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(WebShadowBrutal, shape = RectangleShape)
-            .padding(end = 4.dp, bottom = 4.dp)
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = CardBg),
+        border = BorderStroke(1.dp, CardBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        modifier = modifier.fillMaxWidth()
     ) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(BorderStroke(1.5.dp, WebCardBorder), shape = RectangleShape)
-                .padding(1.dp)
-                .border(BorderStroke(1.dp, WebCardInsetBorder), shape = RectangleShape),
-            shape = RectangleShape,
-            color = WebCardBg
-        ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                content = content
-            )
-        }
+        Column(
+            modifier = Modifier.padding(16.dp),
+            content = content
+        )
     }
 }
 
@@ -1020,12 +978,12 @@ fun ConnectedPeerItemCard(
     onSendQueue: () -> Unit
 ) {
     Surface(
-        shape = RectangleShape,
-        color = WebCardInnerBg,
-        border = BorderStroke(1.dp, WebCardBorder),
+        shape = RoundedCornerShape(14.dp),
+        color = CardBgElevated,
+        border = BorderStroke(1.dp, CardBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1033,15 +991,15 @@ fun ConnectedPeerItemCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
-                        shape = RectangleShape,
-                        color = WebSuccessBg,
-                        border = BorderStroke(1.dp, WebSuccessBorder),
-                        modifier = Modifier.size(34.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        color = EmeraldBg,
+                        border = BorderStroke(1.dp, EmeraldBorder),
+                        modifier = Modifier.size(38.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
                                 if (peer.deviceType == "mobile") "📱" else if (peer.deviceType == "tablet") "📱" else "🖥️",
-                                fontSize = 16.sp
+                                fontSize = 18.sp
                             )
                         }
                     }
@@ -1049,66 +1007,62 @@ fun ConnectedPeerItemCard(
                     Column {
                         Text(
                             peer.name,
-                            fontFamily = FontFamily.Serif,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
-                            color = WebTextPrimary
+                            color = TextPrimary
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 "${peer.deviceType.uppercase()} • ",
                                 fontSize = 10.sp,
-                                fontFamily = FontFamily.SansSerif,
-                                color = WebTextSecondary
+                                color = TextSecondary
                             )
                             Box(
                                 modifier = Modifier
                                     .size(6.dp)
-                                    .background(WebSuccess, shape = RectangleShape)
+                                    .clip(CircleShape)
+                                    .background(EmeraldOnline)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 "READY • ⚡ DIRECT LINK",
                                 fontSize = 9.sp,
                                 fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.SansSerif,
-                                color = WebSuccess
+                                color = EmeraldLight
                             )
                         }
                     }
                 }
 
                 Surface(
-                    shape = RectangleShape,
-                    color = WebCardLightBg,
-                    border = BorderStroke(1.dp, WebCardBorder)
+                    shape = RoundedCornerShape(999.dp),
+                    color = DarkBg,
+                    border = BorderStroke(1.dp, CardBorder)
                 ) {
                     Text(
                         peer.ip,
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = WebTextSecondary,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        color = TextSecondary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Button(
                 onClick = onSendQueue,
-                shape = RectangleShape,
-                colors = ButtonDefaults.buttonColors(containerColor = WebAccentDark, contentColor = WebTextLight),
-                border = BorderStroke(1.dp, WebCopper),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = Color.White),
                 modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(vertical = 6.dp)
+                contentPadding = PaddingValues(vertical = 8.dp)
             ) {
                 Text(
-                    if (queueCount > 0) "⚡ SEND QUEUE ($queueCount) TO ${peer.name.split(" ")[0].uppercase()}"
-                    else "⚡ CONNECTED TO ${peer.name.split(" ")[0].uppercase()}",
+                    if (queueCount > 0) "⚡ Send Queue ($queueCount) to ${peer.name.split(" ")[0]}"
+                    else "⚡ Connected to ${peer.name.split(" ")[0]}",
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
+                    fontWeight = FontWeight.Bold
                 )
             }
         }
@@ -1127,12 +1081,12 @@ fun SharedQueueItemCard(
     val isText = item.textContent != null || item.mimeType.startsWith("text/") || item.name.endsWith(".txt", ignoreCase = true)
 
     Surface(
-        shape = RectangleShape,
-        color = WebCardInnerBg,
-        border = BorderStroke(1.dp, WebCardBorder),
+        shape = RoundedCornerShape(12.dp),
+        color = CardBgElevated,
+        border = BorderStroke(1.dp, CardBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1147,41 +1101,37 @@ fun SharedQueueItemCard(
                     Column {
                         Text(
                             item.name,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
-                            color = WebTextPrimary,
+                            color = TextPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             "${formatFileSize(item.size)} • ${if (isText) "Text Note" else item.mimeType}",
                             fontSize = 10.sp,
-                            color = WebTextSecondary
+                            color = TextSecondary
                         )
                     }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isText && item.textContent != null) {
-                        Button(
+                        FilledTonalButton(
                             onClick = { onCopyText(item.textContent) },
-                            shape = RectangleShape,
-                            colors = ButtonDefaults.buttonColors(containerColor = WebCardLightBg, contentColor = WebTextPrimary),
-                            border = BorderStroke(1.dp, WebTextPrimary),
+                            shape = RoundedCornerShape(6.dp),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                         ) {
-                            Text("📋 COPY", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            Text("📋 Copy", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                         Spacer(modifier = Modifier.width(6.dp))
                     }
 
-                    OutlinedButton(
+                    IconButton(
                         onClick = onRemove,
-                        shape = RectangleShape,
-                        border = BorderStroke(1.dp, WebError),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        modifier = Modifier.size(28.dp)
                     ) {
-                        Text("✕", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = WebError)
+                        Text("✕", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = ErrorRed)
                     }
                 }
             }
@@ -1189,15 +1139,15 @@ fun SharedQueueItemCard(
             if (isText && !item.textContent.isNullOrBlank()) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Surface(
-                    shape = RectangleShape,
-                    color = WebCardLightBg,
-                    border = BorderStroke(1.dp, WebCardBorder),
+                    shape = RoundedCornerShape(8.dp),
+                    color = DarkBg,
+                    border = BorderStroke(1.dp, CardBorder),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         item.textContent,
                         fontSize = 11.sp,
-                        color = WebTextPrimary,
+                        color = TextSecondary,
                         fontFamily = FontFamily.Monospace,
                         maxLines = 3,
                         overflow = TextOverflow.Ellipsis,
@@ -1221,12 +1171,12 @@ fun ReceivedFileItemCard(
     val isText = item.textContent != null || item.name.endsWith(".txt", ignoreCase = true) || item.name.startsWith("note_", ignoreCase = true)
 
     Surface(
-        shape = RectangleShape,
-        color = WebCardInnerBg,
-        border = BorderStroke(1.dp, WebCardBorder),
+        shape = RoundedCornerShape(12.dp),
+        color = CardBgElevated,
+        border = BorderStroke(1.dp, CardBorder),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1241,16 +1191,16 @@ fun ReceivedFileItemCard(
                     Column {
                         Text(
                             item.name,
-                            fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
-                            color = WebTextPrimary,
+                            color = TextPrimary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             "${formatFileSize(item.size)} • ${formatDate(item.lastModified)}",
                             fontSize = 10.sp,
-                            color = WebTextSecondary
+                            color = TextSecondary
                         )
                     }
                 }
@@ -1259,43 +1209,41 @@ fun ReceivedFileItemCard(
                     if (isText && item.textContent != null) {
                         Button(
                             onClick = { onCopyToClipboard(item.textContent) },
-                            shape = RectangleShape,
-                            colors = ButtonDefaults.buttonColors(containerColor = WebSuccess, contentColor = WebTextLight),
-                            border = BorderStroke(1.dp, WebTextPrimary),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = EmeraldOnline, contentColor = Color.White),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                         ) {
-                            Text("📋 COPY", fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                            Text("📋 Copy", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                         Spacer(modifier = Modifier.width(6.dp))
                     }
 
                     Button(
                         onClick = { onOpenFile(File(item.path)) },
-                        shape = RectangleShape,
-                        colors = ButtonDefaults.buttonColors(containerColor = WebAccentDark, contentColor = WebTextLight),
-                        border = BorderStroke(1.dp, WebCopper),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentBlue, contentColor = Color.White),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                     ) {
-                        Text("OPEN", fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                        Text("Open", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
             if (isText && !item.textContent.isNullOrBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Surface(
-                    shape = RectangleShape,
-                    color = WebCardLightBg,
-                    border = BorderStroke(1.dp, WebCardBorder),
+                    shape = RoundedCornerShape(8.dp),
+                    color = DarkBg,
+                    border = BorderStroke(1.dp, CardBorder),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { onCopyToClipboard(item.textContent) }
                 ) {
-                    Column(modifier = Modifier.padding(8.dp)) {
+                    Column(modifier = Modifier.padding(10.dp)) {
                         Text(
                             item.textContent,
-                            fontSize = 11.sp,
-                            color = WebTextPrimary,
+                            fontSize = 12.sp,
+                            color = TextPrimary,
                             fontFamily = FontFamily.Monospace,
                             maxLines = 4,
                             overflow = TextOverflow.Ellipsis
@@ -1304,8 +1252,8 @@ fun ReceivedFileItemCard(
                         Text(
                             "👆 Tap to copy to clipboard",
                             fontSize = 9.sp,
-                            color = WebTextSecondary,
-                            fontWeight = FontWeight.Bold
+                            color = AccentCyan,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
