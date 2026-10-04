@@ -16,14 +16,16 @@ data class SharedFileItem(
     val size: Long,
     val mimeType: String,
     val uri: Uri? = null,
-    val localFile: File? = null
+    val localFile: File? = null,
+    val textContent: String? = null
 )
 
 data class ReceivedFileItem(
     val name: String,
     val size: Long,
     val path: String,
-    val lastModified: Long
+    val lastModified: Long,
+    val textContent: String? = null
 )
 
 object SharedFileManager {
@@ -68,19 +70,59 @@ object SharedFileManager {
         _sharedFiles.value = _sharedFiles.value + item
     }
 
+    fun addSharedText(context: Context, text: String) {
+        if (text.isBlank()) return
+        val snippet = text.trim().take(16).replace(Regex("[^a-zA-Z0-9_-]"), "_").ifBlank { "note" }
+        val fileName = "note_${snippet}_${System.currentTimeMillis() % 10000}.txt"
+        val cacheFile = File(context.cacheDir, fileName).apply {
+            writeText(text, Charsets.UTF_8)
+        }
+
+        val item = SharedFileItem(
+            name = fileName,
+            size = cacheFile.length(),
+            mimeType = "text/plain; charset=utf-8",
+            localFile = cacheFile,
+            textContent = text
+        )
+        _sharedFiles.value = listOf(item) + _sharedFiles.value
+        setMessage(text)
+    }
+
     fun removeSharedFile(id: String) {
         _sharedFiles.value = _sharedFiles.value.filter { it.id != id }
+    }
+
+    fun clearSharedFiles() {
+        _sharedFiles.value = emptyList()
+    }
+
+    fun clearReceivedFiles(context: Context) {
+        val dir = getDownloadDir(context)
+        dir.listFiles()?.forEach { file ->
+            try { file.delete() } catch (ignored: Exception) {}
+        }
+        refreshReceivedFiles(context)
     }
 
     fun refreshReceivedFiles(context: Context) {
         val dir = getDownloadDir(context)
         val files = dir.listFiles()?.filter { it.isFile }?.sortedByDescending { it.lastModified() } ?: emptyList()
-        _receivedFiles.value = files.map {
+        _receivedFiles.value = files.map { file ->
+            var textSnippet: String? = null
+            if (file.name.endsWith(".txt", ignoreCase = true) || file.name.startsWith("note_")) {
+                if (file.length() < 100_000) {
+                    try {
+                        textSnippet = file.readText(Charsets.UTF_8)
+                    } catch (ignored: Exception) {}
+                }
+            }
             ReceivedFileItem(
-                name = it.name,
-                size = it.length(),
-                path = it.absolutePath,
-                lastModified = it.lastModified()
+                name = file.name,
+                size = file.length(),
+                path = file.absolutePath,
+                lastModified = file.lastModified(),
+                textContent = textSnippet
             )
         }
     }

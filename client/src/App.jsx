@@ -251,7 +251,24 @@ function App() {
             es.addEventListener('new_message', (e) => {
               try {
                 const parsed = JSON.parse(e.data);
-                showToast(`Message from phone: ${parsed.message}`, 'info');
+                const msgText = parsed.message || '';
+                if (msgText) {
+                  showToast(`📱 Message from phone received!`, 'info');
+                  const textBlob = new Blob([msgText], { type: 'text/plain;charset=utf-8' });
+                  setReceivedFiles(prev => [{
+                    id: 'phone_note_' + Date.now(),
+                    name: 'Phone Note (' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ').txt',
+                    caption: '',
+                    isText: true,
+                    textPreview: msgText,
+                    type: 'text/plain',
+                    size: textBlob.size,
+                    senderName: data.deviceName || 'Android Phone',
+                    data: URL.createObjectURL(textBlob),
+                    blob: textBlob,
+                    time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  }, ...prev]);
+                }
               } catch (ignored) {}
             });
           } catch (e) {
@@ -1081,6 +1098,14 @@ function App() {
         if (!res.ok) {
           throw new Error(`Server returned HTTP ${res.status}`);
         }
+        if (item.isText && item.textContent) {
+          try {
+            await fetch('/api/message', {
+              method: 'POST',
+              body: item.textContent
+            });
+          } catch (ignored) {}
+        }
         successCount++;
         setTransferProgress({
           fileName: `(${i + 1}/${queue.length}) ${item.name}`,
@@ -1730,14 +1755,39 @@ function App() {
                         <div style={{ fontWeight: 600, fontSize: '0.92rem' }}>{f.name}</div>
                         <div style={{ fontSize: '0.75rem', opacity: 0.7 }}>{formatBytes(f.size)}</div>
                       </div>
-                      <a 
-                        href={`/api/download?id=${f.id}`}
-                        download={f.name}
-                        className="action-btn small-btn"
-                        style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#10b981', color: '#fff' }}
-                      >
-                        <Download size={14} /> Download
-                      </a>
+                      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                        {(f.isText || f.name.endsWith('.txt')) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (f.textContent) {
+                                navigator.clipboard.writeText(f.textContent);
+                                showToast('Copied text to clipboard!', 'success');
+                              } else {
+                                fetch(`/api/download?id=${f.id}`)
+                                  .then(r => r.text())
+                                  .then(txt => {
+                                    navigator.clipboard.writeText(txt);
+                                    showToast('Copied text to clipboard!', 'success');
+                                  })
+                                  .catch(() => showToast('Failed to copy text', 'error'));
+                              }
+                            }}
+                            className="action-btn small-btn secondary"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                          >
+                            <Copy size={13} /> Copy
+                          </button>
+                        )}
+                        <a 
+                          href={`/api/download?id=${f.id}`}
+                          download={f.name}
+                          className="action-btn small-btn"
+                          style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: '#10b981', color: '#fff' }}
+                        >
+                          <Download size={14} /> Download
+                        </a>
+                      </div>
                     </div>
                   ))}
                 </div>

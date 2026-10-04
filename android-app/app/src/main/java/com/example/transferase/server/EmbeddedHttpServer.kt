@@ -167,7 +167,9 @@ class EmbeddedHttpServer(
     private fun handleListSharedFiles(output: OutputStream) {
         val files = SharedFileManager.sharedFiles.value
         val itemsJson = files.joinToString(",") { f ->
-            """{"id":"${f.id}","name":"${escapeJson(f.name)}","size":${f.size},"mimeType":"${f.mimeType}"}"""
+            val isText = f.textContent != null || f.mimeType.startsWith("text/") || f.name.endsWith(".txt", ignoreCase = true)
+            val textEscaped = f.textContent?.let { escapeJson(it) } ?: ""
+            """{"id":"${f.id}","name":"${escapeJson(f.name)}","size":${f.size},"mimeType":"${f.mimeType}","isText":$isText,"textContent":"$textEscaped"}"""
         }
         val json = "[$itemsJson]"
         sendResponse(output, 200, "OK", "application/json", json.toByteArray(StandardCharsets.UTF_8))
@@ -306,8 +308,17 @@ class EmbeddedHttpServer(
                 String(bytes, StandardCharsets.UTF_8)
             } else ""
 
-            SharedFileManager.setMessage(body)
-            broadcastEvent("new_message", """{"message":"${escapeJson(body)}"}""")
+            if (body.isNotBlank()) {
+                SharedFileManager.setMessage(body)
+                try {
+                    val targetDir = SharedFileManager.getDownloadDir(context)
+                    val noteFile = File(targetDir, "note_pc_${System.currentTimeMillis() % 10000}.txt")
+                    noteFile.writeText(body, StandardCharsets.UTF_8)
+                    SharedFileManager.refreshReceivedFiles(context)
+                    onFileReceived?.invoke(noteFile.name, noteFile.length())
+                } catch (ignored: Exception) {}
+                broadcastEvent("new_message", """{"message":"${escapeJson(body)}"}""")
+            }
             sendResponse(output, 200, "OK", "application/json", """{"success":true}""".toByteArray())
         } else {
             val msg = SharedFileManager.lastMessage.value ?: ""
