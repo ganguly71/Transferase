@@ -1567,7 +1567,7 @@ function App() {
   const handleOpenQrModal = () => {
     let activeCode = networkInfo.roomCode && networkInfo.roomCode !== 'Local Network' && networkInfo.roomCode !== 'Phone Server'
       ? networkInfo.roomCode
-      : (networkInfo.room ? networkInfo.room.replace(/[^a-zA-Z0-9]/g, '').slice(-6) : '');
+      : '';
 
     if (!activeCode) {
       activeCode = Math.floor(100000 + Math.random() * 900000).toString();
